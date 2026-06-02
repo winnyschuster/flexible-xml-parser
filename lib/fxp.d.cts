@@ -528,9 +528,41 @@ interface OutputBuilderInstance {
     rawContent: string,
     matcher: any,
   ): void;
+
+  /**
+   * Predicate evaluated after each non-self-closing, non-stop, non-skip opening
+   * tag is pushed onto the parser stack.  When the function returns `true` the
+   * parser immediately stops reading further input and returns a partial-but-
+   * consistent output object.
+   *
+   * At the moment of evaluation the read-only `matcher` is positioned at the
+   * tag that triggered the exit.  All tags that were open before it are cleanly
+   * closed (innermost first) so the output builder can finalise its tree.
+   * The output builder's `onExit()` method is then called with the exit context.
+   *
+   * No error is thrown — the normal return value of `parse()` / `feed()+end()`
+   * / `parseStream()` is returned as usual.
+   *
+   * Must be a function.  Passing any other truthy value raises a `ParseError`
+   * with code `INVALID_INPUT` at construction time.
+   *
+   * @param matcher - Read-only path matcher positioned at the triggering tag.
+   * @returns `true` to stop parsing now; any other value to continue.
+   *
+   * @example
+   * // Stop after the first <item> whose @id attribute equals 'stop-here'
+   * const parser = new XMLParser({
+   *   skip: { attributes: false },
+   *   exitIf(matcher) {
+   *     return matcher.getTagName() === 'item' &&
+   *            matcher.getAttribute('@_id') === 'stop-here';
+   *   },
+   * });
+   */
+  exitIf?: ((matcher: any) => boolean) | null;
 }
 
-default class XMLParser {
+declare class XMLParser {
   /**
    * Create a new XMLParser.
    * @throws {ParseError} with code `INVALID_INPUT` or `SECURITY_RESERVED_OPTION`
@@ -598,9 +630,7 @@ default class XMLParser {
   wasExited: boolean;
 }
 
-{ XMLParser };
-
-class CompactObjBuilder implements OutputBuilderFactory {
+declare class CompactObjBuilder implements OutputBuilderFactory {
   constructor(options?: Partial<X2jOptions>);
   getInstance(parserOptions: X2jOptions): OutputBuilderInstance;
   registerValueParser(name: string, parser: ValueParser): void;
@@ -637,14 +667,10 @@ declare namespace fxp {
     XMLParser,
     ErrorCode,
     xmlEnclosures,
-    ReplaceEntitiesValueParser,
     ParseError,
-    ElementType,
-    BaseOutputBuilder,
-    booleanParserExt,
-    joinParser,
     quoteEnclosures,
-    DoctypeOptions
+    DoctypeOptions,
+    CompactObjBuilder
   }
 }
 
