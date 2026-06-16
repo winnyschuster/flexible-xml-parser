@@ -15,6 +15,7 @@ skip: {
   comment:     false,  // Exclude comments (see also nameFor.comment)
   nsPrefix:    false,  // Strip namespace prefixes (ns:tag → tag)
   tags:        [],     // Tag paths to drop silently from output
+  whitespaceText: true;//Skip whitespace only text values to be passed to the output builder
 }
 ```
 
