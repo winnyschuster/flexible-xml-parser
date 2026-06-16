@@ -78,6 +78,12 @@ export interface SkipOptions {
    * }
    */
   tags?: Array<string | SkipTagEntry>;
+  /**
+   * Skip whitespace only text values to be passed to the builder
+   * 
+   * @default true
+   */
+  whitespaceText?: boolean;
 }
 
 export interface NameForOptions {

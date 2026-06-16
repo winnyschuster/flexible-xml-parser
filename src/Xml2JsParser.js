@@ -467,8 +467,8 @@ export default class Xml2JsParser {
 
   addTextNode() {
     if (this.tagTextData !== undefined && this.tagTextData !== "") {
-      if (this.tagTextData.trim().length > 0) {
-        // Pass raw text — entity expansion is handled by 'entities' ValueParser in the chain
+      // Pass raw text — entity expansion is handled by 'entities' ValueParser in the chain
+      if (!this.options.skip.whitespaceText || this.tagTextData.trim().length > 0) {
         this.outputBuilder.addValue(this.tagTextData, this.readonlyMatcher);
       }
       this.tagTextData = "";

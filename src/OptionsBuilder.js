@@ -21,6 +21,7 @@ export const defaultOptions = {
     comment: false,       // Exclude comments from output entirely
     nsPrefix: false,      // Strip namespace prefixes (e.g. ns:tag → tag)
     tags: [],             // Tag paths to skip entirely — content is silently dropped from output
+    whitespaceText: true  // addValue() of a builder would not be called if text is only whitespaces
   },
 
   // --- nameFor group ---
