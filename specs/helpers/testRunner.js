@@ -62,7 +62,7 @@ export function runAcrossAllInputSources(testName, xmlString, testFn, parserOpti
 }
 export function frunAcrossAllInputSources(testName, xmlString, testFn, parserOptions = {}) {
   const inputTypes = ['string', 'buffer', 'feedable'];
-  // const inputTypes = ['feedable'];
+  // const inputTypes = ['string'];
 
   inputTypes.forEach(inputType => {
     fit(`${testName} [${inputType}]`, function () {

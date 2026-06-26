@@ -309,6 +309,7 @@ describe("Output Builder Options - forceArray and forceTextNode", function () {
           <item>Value</item>
         </root>`,
       (result) => {
+        // console.log(JSON.stringify(result, null, 2))
         const expected = {
           "root": {
             "item": {
@@ -536,6 +537,7 @@ describe("Output Builder Options - forceArray and forceTextNode", function () {
           <item>Single</item>
         </root>`,
       (result) => {
+        // console.log(JSON.stringify(result, null, 2))
         expect(Array.isArray(result.root.item)).toBe(true);
         expect(result.root.item[0]).toBe("Single");
       },

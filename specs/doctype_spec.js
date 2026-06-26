@@ -1,6 +1,7 @@
 import XMLParser from "../src/XMLParser.js";
 import { EntityDecoder, COMMON_HTML } from "@nodable/entities";
 import { CompactBuilderFactory } from "@nodable/compact-builder";
+import EntityParser from "./helpers/CustomEntityParser.js"
 import {
   runAcrossAllInputSources,
   frunAcrossAllInputSources,
@@ -20,29 +21,16 @@ const withDocType = (entities, body) => {
   return `<!DOCTYPE root [\n${decls}\n]>${body}`;
 };
 
-class EntityParser extends EntityDecoder {
-  constructor(options) {
-    super(options);
-  }
-
-  parse(val) {
-    if (typeof val === 'string') {
-      val = this.decode(val);
-    }
-    return val;
-  }
-}
-
 // Helper: build a parser with a custom EntityDecoder configuration.
 // Keeps test bodies concise — callers only specify what they care about.
 const makeParser = (doctypeOpts = {}, entitiesOpts = {}, parserOpts = {}, builderOpts = {}) => {
   const evp = new EntityParser(entitiesOpts);
-  const builder = new CompactBuilderFactory(builderOpts);
-  builder.registerValueParser("entity", evp);
+  const factory = new CompactBuilderFactory(builderOpts);
+  factory.registerValueParser("entity", evp);
   return new XMLParser({
     ...parserOpts,
     doctypeOptions: { enabled: false, ...doctypeOpts },
-    OutputBuilder: builder,
+    OutputBuilder: factory,
   });
 };
 
@@ -530,11 +518,11 @@ describe("Per-parse isolation", function () {
 
   it("expansion counters reset between parses — second parse should not carry over", function () {
     const evp = new EntityParser({ limit: { maxTotalExpansions: 5 } });
-    const builder = new CompactBuilderFactory();
-    builder.registerValueParser("entity", evp);
+    const builderFactory = new CompactBuilderFactory();
+    builderFactory.registerValueParser("entity", evp);
     const parser = new XMLParser({
       doctypeOptions: { enabled: true },
-      OutputBuilder: builder,
+      OutputBuilder: builderFactory,
     });
     const xml = `<!DOCTYPE root [<!ENTITY e "x">]><root>&e;&e;&e;&e;&e;</root>`;
     const r1 = parser.parse(xml);

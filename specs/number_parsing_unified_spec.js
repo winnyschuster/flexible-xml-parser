@@ -1,12 +1,12 @@
 import XMLParser from "../src/XMLParser.js";
 import { CompactBuilderFactory } from "@nodable/compact-builder"
-import { numberParser } from "@nodable/base-output-builder";
+import { NumberValueParser } from "@nodable/base-output-builder";
 import { runAcrossAllInputSources, createInputSource, describeAcrossAllInputSources } from "./helpers/testRunner.js";
 
-// Helper: build a parser with a custom numberParser configuration.
+// Helper: build a parser with a custom NumberValueParser configuration.
 const makeParser = (numOpts = {}, parserOpts = {}) => {
   const builder = new CompactBuilderFactory();
-  builder.registerValueParser("number", new numberParser(numOpts));
+  builder.registerValueParser("number", new NumberValueParser(numOpts));
   return new XMLParser({ ...parserOpts, OutputBuilder: builder });
 };
 
@@ -183,7 +183,7 @@ describeAcrossAllInputSources("Advanced Number Parsing Scenarios", function (par
     // describeAcrossAllInputSources uses XMLParser directly via parse(), so we
     // can't inject a custom builder. Create a parser manually for this test.
     const builder = new CompactBuilderFactory();
-    builder.registerValueParser("number", new numberParser({ hex: true }));
+    builder.registerValueParser("number", new NumberValueParser({ hex: true }));
     const parser = new XMLParser({ OutputBuilder: builder });
     const result = createInputSource(xml, inputType).parse(parser);
 
@@ -196,7 +196,7 @@ describeAcrossAllInputSources("Advanced Number Parsing Scenarios", function (par
 
   it("should preserve strings that look like numbers when tags.valueParsers is empty", function () {
     const xml = "<root><num>123</num></root>";
-    const result = parse(xml, { tags: { valueParsers: [] } });
+    const result = parse(xml, { OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [] } }) });
     expect(result.root.num).toBe("123");
     expect(typeof result.root.num).toBe('string');
   });

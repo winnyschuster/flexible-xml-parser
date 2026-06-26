@@ -1,4 +1,5 @@
 import XMLParser from "../src/XMLParser.js";
+import { CompactBuilderFactory } from "@nodable/compact-builder";
 import {
   runAcrossAllInputSources,
   frunAcrossAllInputSources,
@@ -35,7 +36,7 @@ describe("Processing Instructions — XML declaration", function () {
     (result) => {
       expect(result["?xml"]["@_version"]).toBe("1.0");
     },
-    { skip: { attributes: false }, attributes: { valueParsers: [] } }
+    { skip: { attributes: false }, OutputBuilder: new CompactBuilderFactory({ attributes: { valueParsers: [] } }) }
   );
 
   // NOTE: skip.declaration is currently not working as expected due to a bug

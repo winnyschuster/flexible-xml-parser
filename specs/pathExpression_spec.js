@@ -15,14 +15,18 @@
 import XMLParser from "../src/XMLParser.js";
 import { Expression } from "path-expression-matcher";
 import { CompactBuilderFactory, CompactBuilder } from "@nodable/compact-builder";
-import { ElementType } from "@nodable/base-output-builder";
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 function makeFactory(BuilderSubclass) {
   return {
-    getInstance(parserOptions) {
+    getInstance(parserOptions, readonlyMatcher) {
       const base = new CompactBuilderFactory();
-      return new BuilderSubclass(parserOptions, base.options, { ...base.registeredValParsers });
+      return new BuilderSubclass(
+        parserOptions,
+        base.builderOptions,
+        readonlyMatcher,
+        base.registry
+      );
     },
     registerValueParser(name, parser) { },
   };
@@ -222,13 +226,13 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class CaptureMatcher {
       parse(val, context) {
-        if (context?.elementType === ElementType.ELEMENT) capturedMatcher = context.matcher;
+        if (!context.isAttribute) capturedMatcher = context.matcher;
         return val;
       }
     }
 
     const parser = new XMLParser({
-      tags: { valueParsers: [new CaptureMatcher()] }
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new CaptureMatcher()] } })
     });
     parser.parse(`<root><item>hello</item></root>`);
 
@@ -243,14 +247,14 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class CaptureMatcher {
       parse(val, context) {
-        if (context?.elementType === ElementType.ATTRIBUTE) capturedMatcher = context.matcher;
+        if (context.isAttribute) capturedMatcher = context.matcher;
         return val;
       }
     }
 
     const parser = new XMLParser({
       skip: { attributes: false },
-      attributes: { valueParsers: [new CaptureMatcher()] }
+      OutputBuilder: new CompactBuilderFactory({ attributes: { valueParsers: [new CaptureMatcher()] } })
     });
     parser.parse(`<root><item id="1">hello</item></root>`);
 
@@ -272,7 +276,7 @@ describe("PEM integration — matcher in value parser context", function () {
 
     const parser = new XMLParser({
       skip: { attributes: false },
-      tags: { valueParsers: [new AdminUpperParser()] }
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new AdminUpperParser()] } })
     });
     const result = parser.parse(`
       <users>
@@ -289,20 +293,23 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class TypeCapture {
       parse(val, context) {
-        if (context) types.push(context.elementType);
+        types.push(context.isAttribute ? "A" : "E");
         return val;
       }
     }
 
+    const typeCapture = new TypeCapture();
     const parser = new XMLParser({
       skip: { attributes: false },
-      tags: { valueParsers: [new TypeCapture()] },
-      attributes: { valueParsers: [new TypeCapture()] },
+      OutputBuilder: new CompactBuilderFactory({
+        tags: { valueParsers: [typeCapture] },
+        attributes: { valueParsers: [typeCapture] },
+      })
     });
     parser.parse(`<root><item id="1">text</item></root>`);
 
-    expect(types).toContain(ElementType.ELEMENT);
-    expect(types).toContain(ElementType.ATTRIBUTE);
+    expect(types).toContain("E");
+    expect(types).toContain("A");
   });
 
   it("should set isLeafNode:true for simple text-only tags", function () {
@@ -310,7 +317,7 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class LeafCapture {
       parse(val, context) {
-        if (context?.elementType === ElementType.ELEMENT) {
+        if (!context.isAttribute) {
           leafFlags.push({ name: context.elementName, isLeaf: context.isLeafNode });
         }
         return val;
@@ -318,7 +325,7 @@ describe("PEM integration — matcher in value parser context", function () {
     }
 
     const parser = new XMLParser({
-      tags: { valueParsers: [new LeafCapture()] }
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new LeafCapture()] } })
     });
     parser.parse(`<root><leaf>text</leaf></root>`);
 
@@ -332,7 +339,7 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class LeafCapture {
       parse(val, context) {
-        if (context?.elementType === ElementType.ELEMENT) {
+        if (!context.isAttribute) {
           leafFlags.push({ name: context.elementName, isLeaf: context.isLeafNode });
         }
         return val;
@@ -340,7 +347,7 @@ describe("PEM integration — matcher in value parser context", function () {
     }
 
     const parser = new XMLParser({
-      tags: { valueParsers: [new LeafCapture()] }
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new LeafCapture()] } })
     });
     // "parent" has mixed content: text + child element — parseValue runs on the text portion
     parser.parse(`<root><parent>intro <child>text</child></parent></root>`);
@@ -355,7 +362,7 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class AttrLeafCapture {
       parse(val, context) {
-        if (context?.elementType === ElementType.ATTRIBUTE) {
+        if (context.isAttribute) {
           attrLeafFlags.push(context.isLeafNode);
         }
         return val;
@@ -364,7 +371,7 @@ describe("PEM integration — matcher in value parser context", function () {
 
     const parser = new XMLParser({
       skip: { attributes: false },
-      attributes: { valueParsers: [new AttrLeafCapture()] }
+      OutputBuilder: new CompactBuilderFactory({ attributes: { valueParsers: [new AttrLeafCapture()] } })
     });
     parser.parse(`<root><item id="1" class="foo">text</item></root>`);
 
@@ -377,12 +384,14 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class NameCapture {
       parse(val, context) {
-        if (context?.elementType === ElementType.ELEMENT) names.push(context.elementName);
+        if (!context.isAttribute) names.push(context.elementName);
         return val;
       }
     }
 
-    const parser = new XMLParser({ tags: { valueParsers: [new NameCapture()] } });
+    const parser = new XMLParser({
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new NameCapture()] } })
+    });
     parser.parse(`<catalog><title>My Catalog</title><count>5</count></catalog>`);
 
     expect(names).toContain("title");
@@ -394,14 +403,14 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class AttrNameCapture {
       parse(val, context) {
-        if (context?.elementType === ElementType.ATTRIBUTE) attrNames.push(context.elementName);
+        if (context.isAttribute) attrNames.push(context.elementName);
         return val;
       }
     }
 
     const parser = new XMLParser({
       skip: { attributes: false },
-      attributes: { valueParsers: [new AttrNameCapture()] }
+      OutputBuilder: new CompactBuilderFactory({ attributes: { valueParsers: [new AttrNameCapture()] } })
     });
     parser.parse(`<root><item id="1" type="foo"/></root>`);
 
@@ -426,7 +435,7 @@ describe("PEM integration — matcher in value parser context", function () {
 
     const parser = new XMLParser({
       // Override default chain — no automatic number conversion
-      tags: { valueParsers: [new SelectiveNumber()] }
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new SelectiveNumber()] } })
     });
     const result = parser.parse(`
       <order>
@@ -447,7 +456,7 @@ describe("PEM integration — matcher in value parser context", function () {
 
     class PrefixIdParser {
       parse(val, context) {
-        if (context?.elementType !== ElementType.ATTRIBUTE) return val;
+        if (!context.isAttribute) return val;
         if (context?.elementName === "id" && context?.matcher?.matches(productIdExpr)) {
           return "PROD-" + val;
         }
@@ -457,7 +466,7 @@ describe("PEM integration — matcher in value parser context", function () {
 
     const parser = new XMLParser({
       skip: { attributes: false },
-      attributes: { valueParsers: [new PrefixIdParser()] }
+      OutputBuilder: new CompactBuilderFactory({ attributes: { valueParsers: [new PrefixIdParser()] } })
     });
     const result = parser.parse(`
       <catalog>
@@ -576,7 +585,9 @@ describe("PEM integration — ReadOnlyMatcher guards", function () {
       }
     }
 
-    const parser = new XMLParser({ tags: { valueParsers: [new GrabMatcher()] } });
+    const parser = new XMLParser({
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new GrabMatcher()] } })
+    });
     parser.parse(`<root><tag>value</tag></root>`);
 
     expect(roMatcher).not.toBeNull();
@@ -593,7 +604,9 @@ describe("PEM integration — ReadOnlyMatcher guards", function () {
       }
     }
 
-    const parser = new XMLParser({ tags: { valueParsers: [new GrabMatcher()] } });
+    const parser = new XMLParser({
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new GrabMatcher()] } })
+    });
     parser.parse(`<root><tag>value</tag></root>`);
 
     expect(() => roMatcher.pop()).toThrowError("roMatcher.pop is not a function");
@@ -609,7 +622,9 @@ describe("PEM integration — ReadOnlyMatcher guards", function () {
       }
     }
 
-    const parser = new XMLParser({ tags: { valueParsers: [new GrabMatcher()] } });
+    const parser = new XMLParser({
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new GrabMatcher()] } })
+    });
     parser.parse(`<root><tag>value</tag></root>`);
 
     expect(() => roMatcher.reset()).toThrowError("roMatcher.reset is not a function");
@@ -625,7 +640,9 @@ describe("PEM integration — ReadOnlyMatcher guards", function () {
       }
     }
 
-    const parser = new XMLParser({ tags: { valueParsers: [new GrabMatcher()] } });
+    const parser = new XMLParser({
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new GrabMatcher()] } })
+    });
     parser.parse(`<root><tag>value</tag></root>`);
 
     expect(() => roMatcher.updateCurrent({ x: "1" })).toThrowError("roMatcher.updateCurrent is not a function");
@@ -636,14 +653,16 @@ describe("PEM integration — ReadOnlyMatcher guards", function () {
 
     class PathCapture {
       parse(val, context) {
-        if (context?.elementType === ElementType.ELEMENT) {
+        if (!context.isAttribute) {
           capturedPaths.push(context.matcher.toString());
         }
         return val;
       }
     }
 
-    const parser = new XMLParser({ tags: { valueParsers: [new PathCapture()] } });
+    const parser = new XMLParser({
+      OutputBuilder: new CompactBuilderFactory({ tags: { valueParsers: [new PathCapture()] } })
+    });
     parser.parse(`<a><b><c>deep</c></b></a>`);
 
     expect(capturedPaths).toContain("a.b.c");

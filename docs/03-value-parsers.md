@@ -4,6 +4,8 @@ Value parsers transform text values extracted from XML — tag content, CDATA, a
 
 Value parsers are configured on the **output builder** (`@nodable/base-output-builder` and its subclasses), not on `XMLParser` directly.
 
+CDATA, comments, stopnodes are not processed by any value parser.
+
 ---
 
 ## Configuring the Pipeline
@@ -12,7 +14,7 @@ Value parsers are configured on the **output builder** (`@nodable/base-output-bu
 import { CompactBuilderFactory } from '@nodable/compact-builder';
 
 const builder = new CompactBuilderFactory({
-  tags:       { valueParsers: ['entity', 'boolean', 'number'] },  // default
+  tags:       { valueParsers: ['ws', 'entity', 'boolean', 'number'] },  // default
   attributes: { valueParsers: ['entity', 'number', 'boolean'] },  // default
 });
 const parser = new XMLParser({ OutputBuilder: builder });
@@ -41,17 +43,23 @@ Expands XML entity references (`&lt;`, `&gt;`, `&amp;`, `&apos;`, `&quot;`), opt
 Which sources are active is controlled by `EntitiesValueParser` from `@nodable/base-output-builder`:
 
 ```javascript
+import { XML, COMMON_HTML, ENTITY_ACTION } from '@nodable/entities';
 import { EntitiesValueParser } from '@nodable/base-output-builder';
 import { CompactBuilderFactory } from '@nodable/compact-builder';
 
 const evp = new EntitiesValueParser({
-  default:  true,   // built-in XML entities (default: true)
-  html:     false,  // HTML named entities like &nbsp; (default: false)
-  external: true,   // entities added via addEntity() (default: true)
+  namedEntities: { ...XML },
+  numericAllowed: true,
+  //limit: {},
+  onInputEntity: (name, value) =>
+    isUnsafe(value, [VALID_CONTEXTS.XML])
+      ? ENTITY_ACTION.BLOCK : ENTITY_ACTION.ALLOW,
 });
 const builder = new CompactBuilderFactory();
 builder.registerValueParser('entity', evp);
 ```
+
+Check '@nodable/entities' for more details on configuration.
 
 DOCTYPE entity collection is controlled separately by `doctypeOptions.enabled` on `XMLParser` (it happens at read time, before value parsing).
 
@@ -66,7 +74,17 @@ const builder = new CompactBuilderFactory({
 
 ### `'boolean'`
 
-Converts `"true"` and `"false"` (case-insensitive) to JavaScript `true`/`false`. All other values pass through unchanged.
+Converts `"true"` and `"false"` (case-insensitive) to JavaScript `true`/`false`. All other values pass through unchanged. You can pass list of true and false values.
+
+```javascript
+import { BooleanParser } from '@nodable/base-output-builder';
+
+const builder = new CompactBuilderFactory();
+builder.registerValueParser('boolean', new BooleanParser({ trueList: ['yes', 'y'], falseList: ['no', 'n'] }));
+// "yes" becomes true, "no" becomes false, "true" and "false" stay as strings
+```
+
+This final the value on successful match and doesn't process further value parsers. However, you can override this setting.
 
 ### `'number'`
 
@@ -79,7 +97,7 @@ Converts numeric strings to JS numbers using the [`strnum`](https://www.npmjs.co
 | `eNotation` | `true` | Parse `1.5e3` as `1500` |
 | `infinity` | `"original"` | What to do with overflow: `"original"`, `"infinity"`, `"string"`, `"null"` |
 
-To customise, import and register directly:
+Check `strnum` package for more details. To customise, import and register directly:
 
 ```javascript
 import { NumberValueParser } from '@nodable/base-output-builder';
@@ -89,6 +107,8 @@ builder.registerValueParser('number', new NumberValueParser({ leadingZeros: fals
 // "007" stays as "007"; 9.99 converts normally
 ```
 
+This final the value on successful match and doesn't process further value parsers. However, you can override this setting.
+
 ### `'trim'`
 
 Strips leading/trailing whitespace. Not in the default chain — add explicitly. Place it **before** `'boolean'` and `'number'` so whitespace is removed before type coercion.
@@ -97,23 +117,37 @@ Strips leading/trailing whitespace. Not in the default chain — add explicitly.
 tags: { valueParsers: ['entity', 'trim', 'boolean', 'number'] }
 ```
 
-### `'currency'`
+### `'WSNormalizer'`
 
-Parses currency strings like `$1,234.56` or `€9.99` into numbers. Not in the default chain.
+Collapses runs of whitespace (spaces, tabs, newlines) to a single space and trims both ends.
+**Replaces `'trim'`** in the default chain.
+
+Normalization is automatically skipped when:
+- The value is not a string
+- The element is an attribute
+- Under `xml:space="preserve"` scope
+- The tag path matches a user-supplied exclusion list
 
 ```javascript
-import { CurrencyValueParser } from '@nodable/base-output-builder';
-tags: { valueParsers: ['entity', new CurrencyValueParser(), 'boolean', 'number'] }
+import { WSNormalizer } from '@nodable/base-output-builder';
+
+const ws = new WSNormalizer({
+  exclude: ['..pre', '..code', '..script'],  // leave whitespace untouched in these
+});
+factory.registerValueParser('ws', ws);
 ```
 
 ---
 
 ## Custom Value Parsers
 
-Any object with a `parse(val, context?)` method works as a value parser:
+Any object with a `parse(val, context?)` and `reset()` method works as a value parser:
 
 ```javascript
-class UpperCaseParser {
+class UpperCaseParser extends BaseValueParser{
+  constructor(options, isfinal){
+    super(isfinal);
+  }
   parse(val) {
     return typeof val === 'string' ? val.toUpperCase() : val;
   }
@@ -124,11 +158,11 @@ const builder = new CompactBuilderFactory({
 });
 ```
 
-To use a custom parser by name, register it on the builder:
+Register by name to reference in multiple chains:
 
 ```javascript
-builder.registerValueParser('uppercase', new UpperCaseParser());
-// Now reference it by name in any valueParsers array
+factory.registerValueParser('upper', new UpperCaseParser());
+// now usable by name in any valueParsers array
 ```
 
 ---
@@ -140,10 +174,9 @@ Each parser receives a `context` as its second argument:
 ```javascript
 {
   elementName:  string,             // tag or attribute name
-  elementValue: any,                // value before this parse call
-  elementType:  'ELEMENT' | 'ATTRIBUTE',
   matcher:      ReadOnlyMatcher,    // inspect path, position
   isLeafNode:   boolean | null,
+  isAttribute:   boolean,
 }
 ```
 
@@ -169,7 +202,7 @@ class TagOnlyParser {
 - Put `'trim'` before `'boolean'` and `'number'` so `"  true  "` → `"true"` first
 - Put `'number'` after `'boolean'` — once a value is `true`, number sees a non-string and passes through
 
-Recommended order: `['entity', 'trim', 'boolean', 'number']`
+Recommended order: `[`ws`, 'entity', 'boolean', 'number']` for tags. `[`ws`, 'entity', 'boolean', 'number']`  for attributes.
 
 ---
 

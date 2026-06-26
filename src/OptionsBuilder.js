@@ -155,6 +155,7 @@ export const defaultOptions = {
   // Default: null (feature disabled)
   exitIf: null,
 
+  //onStopNode(tagDetail, rawContent, matcher)
   // --- output ---
   OutputBuilder: null, //TODO: accept lower case
 };

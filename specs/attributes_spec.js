@@ -1,4 +1,5 @@
 import XMLParser from "../src/XMLParser.js";
+import { CompactBuilderFactory } from "@nodable/compact-builder";
 import {
   runAcrossAllInputSources,
   xrunAcrossAllInputSources,
@@ -256,7 +257,7 @@ describe("Attributes — value parsing", function () {
       expect(result.root.tag["@_count"]).toBe("42");
       expect(result.root.tag["@_active"]).toBe("true");
     },
-    { skip: { attributes: false }, attributes: { valueParsers: [] } }
+    { skip: { attributes: false }, OutputBuilder: new CompactBuilderFactory({ attributes: { valueParsers: [] } }) }
   );
 
   runAcrossAllInputSources(
@@ -267,7 +268,7 @@ describe("Attributes — value parsing", function () {
       expect(result.root.tag["@_label"]).toBe("hello");
       expect(result.root.tag["@_flag"]).toBe("true"); // string — boolean parser not in chain
     },
-    { skip: { attributes: false }, attributes: { valueParsers: ["number"] } }
+    { skip: { attributes: false }, OutputBuilder: new CompactBuilderFactory({ attributes: { valueParsers: ["number"] } }) }
   );
 
 });
@@ -330,6 +331,7 @@ describe("Attributes — mixed with text content", function () {
     "should store text under custom nameFor.text",
     `<root><item id="1">hello</item></root>`,
     (result) => {
+      // console.log(JSON.stringify(result, null, 2))
       expect(result.root.item["@_id"]).toBe(1);
       expect(result.root.item["_text"]).toBe("hello");
     },

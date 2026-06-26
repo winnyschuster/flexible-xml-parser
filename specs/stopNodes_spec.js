@@ -504,6 +504,7 @@ describe("Stop Nodes — whitespace in tags", function () {
         <after>parsed</after>
       </root>`,
     (result) => {
+      // console.log(JSON.stringify(result, null, 2))
       expect(typeof result.root.stopNode).toBe("string");
       expect(result.root.stopNode).toContain("<data>content</data>");
       expect(result.root.stopNode).toContain("<nested>value</nested  >");

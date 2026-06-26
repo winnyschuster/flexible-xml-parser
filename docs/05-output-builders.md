@@ -137,37 +137,43 @@ Attributes are always grouped under `:@` (the `attributes.groupBy` option is ign
 
 ## Custom Output Builder
 
-Extend `BaseOutputBuilder` from `@nodable/base-output-builder` to build any custom output. The four methods you can override:
-
-| Method | Called when | Common use |
-|---|---|---|
-| `addElement(tag, matcher)` | Opening tag | Rename or skip tags |
-| `closeElement(matcher)` | Closing tag | Finalise a tag's value |
-| `addAttribute(name, value)` | Each attribute | Rename, drop, or transform attributes |
-| `addValue(text, matcher)` | Text content | Transform text values |
-| `getOutput()` | After parsing completes | Return the result |
-
-### Minimal example
+Extend `BaseOutputBuilder` from `@nodable/base-output-builder` to build any custom output. 
 
 ```javascript
-import { BaseOutputBuilder } from '@nodable/base-output-builder';
+import { BaseOutputBuilder, BaseOutputBuilderFactory } from '@nodable/base-output-builder';
 
 class TagListBuilder extends BaseOutputBuilder {
-  constructor() {
-    super();
+  constructor(...args) {
+    super(...args);
     this.tags = [];
   }
   addElement(tag) { this.tags.push(tag.name); }
-  getOutput() { return this.tags; }
+  getOutput()     { return this.tags; }
 }
 
-new XMLParser({ OutputBuilder: new TagListBuilder() });
-// Returns array of all tag names encountered
+class TagListBuilderFactory extends BaseOutputBuilderFactory {
+  constructor(builderOptions) {
+    super();
+    this.builderOptions = builderOptions ?? {};
+  }
+
+  getInstance(parserOptions, readonlyMatcher) {
+    return new TagListBuilder(parserOptions, builderOptions, readonlyMatcher, this.registry);
+  }
+}
 ```
 
-### Extending CompactBuilder
+BaseOutputBuilder's constructor arguments:
+```javascript
+constructor(parserOptions, builderOptions, readonlyMatcher, registry)
+```
 
-Subclass `CompactBuilder` to add behaviour while keeping normal object output:
+BaseOutputBuilder provides some fields and methods to be used directly. Check [docs](https://github.com/nodable/flexible-output-builders).
+
+
+### Extending Existing Builders
+
+Subclass existing builders (e.g. `CompactBuilder`) to add behaviour while keeping normal object output:
 
 ```javascript
 import { CompactBuilder } from '@nodable/compact-builder';
@@ -222,8 +228,6 @@ const result = await new XMLParser({ OutputBuilder: new DbWriter() })
   .parseStream(createReadStream('huge.xml'));
 // result === null; data is in the database
 ```
-
-See [CustomOutputBuilder.md](../docs/CustomOutputBuilder.md) (in the original docs) for more examples.
 
 ---
 
