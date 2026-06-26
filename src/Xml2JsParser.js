@@ -318,9 +318,12 @@ export default class Xml2JsParser {
       raeAttrLen = tagExp.rawAttributesLen;
     }
 
-    this.matcher.push(matcherTagName, {}, tagNamespace);
     if (raeAttrLen > 0) {
-      this.matcher.updateCurrent(rawAttributes);
+      this.matcher.push(matcherTagName, rawAttributes, tagNamespace, { keep: ["xml:space"] });
+      // this.matcher.updateCurrent(rawAttributes);
+    } else {
+      this.matcher.push(matcherTagName, {}, tagNamespace);
+
     }
 
     // Resolve skip/stop BEFORE touching the output builder
