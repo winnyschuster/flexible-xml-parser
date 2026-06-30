@@ -48,6 +48,10 @@ export function readClosingTagName(source) {
  */
 export function readTagExp(parser) {
   parser.source.markTokenStart(1);
+  // Absolute document offset where `exp` (tag name onward, right after '<')
+  // begins — captured before any reads so buildTagExpObj can compute each
+  // attribute's absolute document position from its offset within attrsExp.
+  const expStart = parser.source.startIndex;
   let inSingleQuotes = false;
   let inDoubleQuotes = false;
   let i;
@@ -77,7 +81,7 @@ export function readTagExp(parser) {
 
   const exp = parser.source.readStr(i);
   parser.source.updateBufferBoundary(i + 1);
-  return buildTagExpObj(exp, parser);
+  return buildTagExpObj(exp, parser, expStart);
 }
 
 /**
@@ -90,6 +94,7 @@ export function readTagExp(parser) {
  */
 export function readPiExp(parser) {
   parser.source.markTokenStart(1);
+  const expStart = parser.source.startIndex;
   let inSingleQuotes = false;
   let inDoubleQuotes = false;
   let i;
@@ -127,7 +132,7 @@ export function readPiExp(parser) {
 
   const exp = parser.source.readStr(i);
   parser.source.updateBufferBoundary(i + 2);
-  return buildTagExpObj(exp, parser);
+  return buildTagExpObj(exp, parser, expStart);
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -135,16 +140,22 @@ export function readPiExp(parser) {
 /**
  * Parse a raw tag expression string into a structured tag descriptor.
  *
- * @param {string} exp    - everything between '<' and '>' (exclusive)
+ * @param {string} exp      - everything between '<' and '>' (exclusive)
  * @param {object} parser
- * @returns {{ tagName, selfClosing, rawAttributes, _attrsExp }}
+ * @param {number} [expStart] - absolute document offset where `exp` begins
+ *   (i.e. right after '<' or '<?'). Used to compute each attribute's absolute
+ *   document position (tagExp._attrsExpStart) for addAttribute()'s meta arg.
+ *   Optional so callers that don't have/need it can omit it — attribute
+ *   position metadata is simply unavailable in that case, not an error.
+ * @returns {{ tagName, selfClosing, rawAttributes, _attrsExp, _attrsExpStart }}
  */
-function buildTagExpObj(exp, parser) {
+function buildTagExpObj(exp, parser, expStart) {
   const tagExp = {
     tagName: "",
     selfClosing: false,
     rawAttributes: Object.create(null),
     _attrsExp: "", // stored for two-pass attribute flushing in readOpeningTag
+    _attrsExpStart: undefined, // absolute document offset of _attrsExp's first char
   };
 
   const expLen = exp.length;
@@ -163,6 +174,7 @@ function buildTagExpObj(exp, parser) {
     if (isSpace(c)) {
       tagExp.tagName = exp.substring(0, i);
       attrsExp = exp.substring(i + 1);
+      if (expStart !== undefined) tagExp._attrsExpStart = expStart + i + 1;
       break;
     }
   }

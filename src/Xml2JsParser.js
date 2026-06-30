@@ -13,15 +13,20 @@ import { name as isName, qName as isQName } from 'xml-naming';
 class TagDetail {
   /**
    * @param {string} name  - Tag name
-   * @param {number} line  - 1-based line number where the opening tag began
-   * @param {number} col   - 1-based column where the opening tag began
-   * @param {number} index - Character offset from document start
+   * @param {number} line  - 1-based line number where the opening tag's '<' began
+   * @param {number} col   - 1-based column where the opening tag's '<' began
+   * @param {number} index - Character offset of '<' from document start
+   * @param {number} [openEnd] - Character offset immediately after the opening
+   *   tag's closing '>' (i.e. end of `<tag attr="x">`). Undefined until the
+   *   opening tag expression has been fully read; set in readOpeningTag().
+   *   For self-closing tags this is the offset after '/>'.
    */
-  constructor(name, line = 0, col = 0, index = 0) {
+  constructor(name, line = 0, col = 0, index = 0, openEnd = undefined) {
     this.name = name;
     this.line = line;
     this.col = col;
     this.index = index;
+    this.openEnd = openEnd;
   }
 }
 
@@ -125,10 +130,20 @@ export default class Xml2JsParser {
       // which never overwrite this position.
       this.source.markTokenStart(0);
 
+      // Position of the next character, captured before it's read. When that
+      // character turns out to be '<', this is exactly the position of '<'
+      // itself — used below as the authoritative tag-start position for both
+      // TagDetail (open tags) and closeMeta (close tags), instead of deriving
+      // it after the fact from source.startIndex once the tag name/attrs have
+      // already been consumed (which points past the tag, not at its start).
+      const preReadPos = { line: this.source.line, col: this.source.cols, index: this.source.startIndex };
+
       const ch = this.source.readCh();
       if (ch === undefined || ch === '') break;
 
       if (ch === '<') {
+        const tagStart = preReadPos;
+
         const nextChar = this.source.readChAt(0);
         if (nextChar === '') throw new ParseError(
           "Unexpected end of source after '<'",
@@ -142,9 +157,9 @@ export default class Xml2JsParser {
           this.readSpecialTag(nextChar);
         } else if (nextChar === '/') {
           this.source.updateBufferBoundary();
-          this.readClosingTag();
+          this.readClosingTag(tagStart);
         } else {
-          this.readOpeningTag();
+          this.readOpeningTag(tagStart);
         }
       } else {
         // ch is already consumed. Peek ahead for more non-'<' chars and grab
@@ -223,8 +238,18 @@ export default class Xml2JsParser {
     this.finalizeXml();
   }
 
-  readClosingTag() {
+  readClosingTag(tagStart) {
     const tagName = this.processTagName(readClosingTagName(this.source));
+    // closeMeta: position of this closing tag's '</' (tagStart, passed in from
+    // parseXml's dispatch) plus the offset right after its '>' (closeEnd) —
+    // mirrors tagDetail.index / tagDetail.openEnd for the opening-tag side.
+    const closeMeta = {
+      name: tagName,
+      line: tagStart.line,
+      col: tagStart.col,
+      index: tagStart.index,
+      closeEnd: this.source.startIndex,
+    };
 
     if (this.isUnpaired(tagName) || this.isStopNode()) {
       throw new ParseError(`Unexpected closing tag '${tagName}'`, ErrorCode.UNEXPECTED_CLOSE_TAG, { line: this.source.line, col: this.source.cols, index: this.source.startIndex });
@@ -246,10 +271,10 @@ export default class Xml2JsParser {
     }
 
     if (!this.currentTagDetail.root) this.addTextNode();
-    this.popTag();
+    this.popTag(closeMeta);
   }
 
-  readOpeningTag() {
+  readOpeningTag(tagStart) {
     const options = this.options;
     this.addTextNode();
 
@@ -263,12 +288,15 @@ export default class Xml2JsParser {
       const { tagDetail, isSkip } = this._stopNodeProcessorMeta;
       this._stopNodeProcessor.resumeAfterOpenTag();
       readTagExp(this); // re-consume the opening tag from the rewound source
-      const content = this._stopNodeProcessor.collect(this.source);
+      // openEnd reflects the offset right after this opening tag's '>' — stable
+      // across retries since the opening tag is fully re-read every time.
+      tagDetail.openEnd = this.source.startIndex;
+      const { content, end: stopEnd } = this._stopNodeProcessor.collect(this.source);
       if (!isSkip) {
         this.outputBuilder.addElement(tagDetail, this.readonlyMatcher);
-        this.outputBuilder.onStopNode?.(tagDetail, content, this.readonlyMatcher);
+        this.outputBuilder.onStopNode?.(tagDetail, content, this.readonlyMatcher, stopEnd);
         this.outputBuilder.addValue(content, this.readonlyMatcher);
-        this.outputBuilder.closeElement(this.readonlyMatcher);
+        this.outputBuilder.closeElement(this.readonlyMatcher, { name: tagDetail.name, closeEnd: stopEnd.index });
       }
       this.matcher.pop();
       this._stopNodeProcessor = null;
@@ -280,9 +308,10 @@ export default class Xml2JsParser {
     const processedTagName = this.processTagName(tagExp.tagName);
     const tagDetail = new TagDetail(
       processedTagName,
-      this.source.line,
-      this.source.cols,
-      this.source.startIndex,
+      tagStart.line,
+      tagStart.col,
+      tagStart.index,
+      this.source.startIndex, // openEnd: offset right after this opening tag's '>'
     );
 
     // Extract namespace prefix and local name from raw tag name (e.g. "ns:tag" → "ns", "tag").
@@ -331,7 +360,7 @@ export default class Xml2JsParser {
     const skipTagConfig = stopNodeConfig ? null : this.isSkipTag();
 
     if (!options.skip.attributes && !skipTagConfig) {
-      flushAttributes(tagExp._attrsExp, this);
+      flushAttributes(tagExp._attrsExp, this, tagExp._attrsExpStart);
     }
 
     // Stop-node and skip-tag checks AFTER attributes are set so attribute conditions work.
@@ -341,12 +370,15 @@ export default class Xml2JsParser {
 
     if (this.isUnpaired(processedTagName)) {
       this.outputBuilder.addElement(tagDetail, this.readonlyMatcher);
-      this.outputBuilder.closeElement(this.readonlyMatcher);
+      // Unpaired tags (e.g. <br>, <img>) have no separate closing tag — the
+      // close position is the same as the open tag's end.
+      this.outputBuilder.closeElement(this.readonlyMatcher, this._closeMetaFor(tagDetail));
       this.matcher.pop();
     } else if (tagExp.selfClosing) {
       if (!skipTagConfig) {
         this.outputBuilder.addElement(tagDetail, this.readonlyMatcher);
-        this.outputBuilder.closeElement(this.readonlyMatcher);
+        // Self-closing tags (<tag/>) likewise have no distinct closing tag.
+        this.outputBuilder.closeElement(this.readonlyMatcher, this._closeMetaFor(tagDetail));
       }
       this.matcher.pop();
     } else if (stopNodeConfig) {
@@ -360,11 +392,16 @@ export default class Xml2JsParser {
       });
       this._stopNodeProcessorMeta = { tagDetail, isSkip: false };
       this._stopNodeProcessor.activate();
-      const content = this._stopNodeProcessor.collect(this.source);
+      const { content, end: stopEnd } = this._stopNodeProcessor.collect(this.source);
       this.outputBuilder.addElement(tagDetail, this.readonlyMatcher);
-      this.outputBuilder.onStopNode?.(tagDetail, content, this.readonlyMatcher);
+      this.outputBuilder.onStopNode?.(tagDetail, content, this.readonlyMatcher, stopEnd);
       this.outputBuilder.addValue(content, this.readonlyMatcher);
-      this.outputBuilder.closeElement(this.readonlyMatcher);
+      // closeMeta for a stop node carries only `closeEnd` (offset right after
+      // the matched </tagname> was consumed) — StopNodeProcessor scans the
+      // closing tag opaquely and doesn't track where '</tagname' itself starts,
+      // so unlike the normal close path we don't have a real index/line/col
+      // for the close tag's own start, only its end.
+      this.outputBuilder.closeElement(this.readonlyMatcher, { name: tagDetail.name, closeEnd: stopEnd.index });
       this.matcher.pop();
       this._stopNodeProcessor = null;
       this._stopNodeProcessorMeta = null;
@@ -435,11 +472,34 @@ export default class Xml2JsParser {
    * Pop the current tag from the parser stack and notify the output builder.
    * This is the single point of exit for closing a tag — both stacks are
    * updated together.
+   *
+   * @param {object} [closeMeta] - Position info for the closing tag:
+   *   { name, line, col, index, closeEnd }. Omitted when there is no real
+   *   closing tag to report a position for — e.g. AutoCloseHandler synthesizing
+   *   a close at EOF, or exitIf closing already-open ancestors. In that case a
+   *   minimal `{ name }` is passed to the builder instead of nothing, so
+   *   closeElement() never has to special-case "no second argument at all".
    */
-  popTag() {
-    this.outputBuilder.closeElement(this.readonlyMatcher);
+  popTag(closeMeta) {
+    this.outputBuilder.closeElement(this.readonlyMatcher, closeMeta ?? { name: this.currentTagDetail?.name });
     this.matcher.pop();
     this.currentTagDetail = this.tagsStack.pop();
+  }
+
+  /**
+   * Build a closeMeta object for tags with no distinct closing token
+   * (unpaired tags like <br>, and self-closing tags like <tag/>) — the close
+   * position is just the opening tag's own end.
+   * @param {TagDetail} tagDetail
+   */
+  _closeMetaFor(tagDetail) {
+    return {
+      name: tagDetail.name,
+      line: tagDetail.line,
+      col: tagDetail.col,
+      index: tagDetail.index,
+      closeEnd: tagDetail.openEnd,
+    };
   }
 
   readSpecialTag(startCh) {

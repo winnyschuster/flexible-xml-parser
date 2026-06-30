@@ -95,7 +95,14 @@ export default class BufferSource {
   // ─── Core read interface ──────────────────────────────────────────────────
 
   readCh() {
-    return String.fromCharCode(this.buffer[this.startIndex++]);
+    const code = this.buffer[this.startIndex++];
+    if (code === 10) { // '\n'
+      this.line++;
+      this.cols = 0;
+    } else {
+      this.cols++;
+    }
+    return String.fromCharCode(code);
   }
 
   readChAt(index) {
@@ -105,6 +112,34 @@ export default class BufferSource {
   readStr(n, from) {
     if (typeof from === 'undefined') from = this.startIndex;
     return this.buffer.slice(from, from + n).toString();
+  }
+
+  /**
+   * Scan buffer[this.startIndex, end) for byte code 10 ('\n') and advance
+   * line/cols to match, mirroring readCh()'s per-byte logic. Does NOT touch
+   * startIndex — callers set that themselves afterwards (their "end" is not
+   * always startIndex + n; readUptoCloseTag's consumed span includes the
+   * matched stop string).
+   *
+   * Shared by updateBufferBoundary() and the readUpto*() family so every path
+   * that advances the cursor in bulk keeps line/col accurate, not just the
+   * single-byte readCh() path.
+   *
+   * @param {number} end — exclusive end of the span being skipped
+   */
+  _advanceLineCol(end) {
+    let lastNewlineIdx = -1;
+    for (let i = this.startIndex; i < end; i++) {
+      if (this.buffer[i] === 10) {
+        this.line++;
+        lastNewlineIdx = i;
+      }
+    }
+    if (lastNewlineIdx >= 0) {
+      this.cols = end - lastNewlineIdx - 1;
+    } else {
+      this.cols += end - this.startIndex;
+    }
   }
 
   readUpto(stopStr) {
@@ -119,6 +154,7 @@ export default class BufferSource {
       }
       if (match) {
         const result = this.buffer.slice(this.startIndex, i).toString();
+        this._advanceLineCol(i + stopLength);
         this.startIndex = i + stopLength;
         return result;
       }
@@ -142,6 +178,7 @@ export default class BufferSource {
     for (let i = this.startIndex; i < len; i++) {
       if (buf[i] === stopCode) {
         const result = buf.slice(this.startIndex, i).toString();
+        this._advanceLineCol(i + 1);
         this.startIndex = i + 1;
         return result;
       }
@@ -177,6 +214,7 @@ export default class BufferSource {
       }
       if (state === 2) {
         const result = this.buffer.slice(this.startIndex, tagMatchStart).toString();
+        this._advanceLineCol(i + 1);
         this.startIndex = i + 1;
         return result;
       }
@@ -215,7 +253,9 @@ export default class BufferSource {
    * @param {number} [n=1]
    */
   updateBufferBoundary(n = 1) {
-    this.startIndex += n;
+    const end = this.startIndex + n;
+    this._advanceLineCol(end);
+    this.startIndex = end;
     if (this.autoFlush && this.startIndex >= this.flushThreshold && this._tokenStart < 0) {
       this.flush();
     }

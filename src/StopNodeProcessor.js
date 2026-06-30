@@ -143,7 +143,12 @@ export class StopNodeProcessor {
    * chunk-boundary `UNEXPECTED_END` can be retried seamlessly.
    *
    * @param {object} source  Any source object with the standard read interface.
-   * @returns {string}  Raw content between the opening and closing tags.
+   * @returns {{content: string, end: {index: number, line: number, col: number}}}
+   *   `content` is the raw text between the opening and closing tags.
+   *   `end` is the position immediately after the matched closing tag's '>' —
+   *   mirrors `TagDetail.openEnd` / closeMeta.closeEnd for the opening-tag side,
+   *   letting a caller recover the exact span of `<tag>...</tag>` including
+   *   both delimiters, not just the inner content.
    */
   collect(source) {
     source.markTokenStart(1);
@@ -198,7 +203,7 @@ export class StopNodeProcessor {
             const c = source.readCh();
             if (c === '>') break;
           }
-          return this._finish();
+          return this._finish(source);
         }
       }
 
@@ -253,7 +258,7 @@ export class StopNodeProcessor {
 
         if (closeName === this._tagName) {
           this._depth--;
-          if (this._depth === 0) return this._finish();
+          if (this._depth === 0) return this._finish(source);
         }
         this._content += '</' + closeName + closeSuffix;
         continue;
@@ -322,7 +327,7 @@ export class StopNodeProcessor {
             const c = source.readCh();
             if (c === '>') break;
           }
-          return this._finish();
+          return this._finish(source);
         }
       }
 
@@ -389,7 +394,7 @@ export class StopNodeProcessor {
 
         if (closeName === this._tagName) {
           this._depth--;
-          if (this._depth === 0) return this._finish();
+          if (this._depth === 0) return this._finish(source);
         }
         this._content += '</' + closeName + closeSuffix;
         continue;
@@ -417,16 +422,20 @@ export class StopNodeProcessor {
   // ── Shared finish helper ───────────────────────────────────────────────────
 
   /**
-   * Reset runtime state and return the accumulated content.
-   * Called by every strategy when the closing tag is confirmed.
-   * @returns {string}
+   * Reset runtime state and return the accumulated content plus the end
+   * position (immediately after the matched closing tag's '>').
+   * Called by every strategy when the closing tag is confirmed — always
+   * right after that '>' has just been consumed from `source`.
+   * @param {object} source
+   * @returns {{content: string, end: {index: number, line: number, col: number}}}
    */
-  _finish() {
+  _finish(source) {
     const result = this._content;
+    const end = { index: source.startIndex, line: source.line, col: source.cols };
     this._active = false;
     this._content = '';
     this._depth = 1;
-    return result;
+    return { content: result, end };
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

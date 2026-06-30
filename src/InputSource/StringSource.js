@@ -108,7 +108,14 @@ export default class StringSource {
   // ─── Core read interface ──────────────────────────────────────────────────
 
   readCh() {
-    return this.buffer[this.startIndex++];
+    const ch = this.buffer[this.startIndex++];
+    if (ch === '\n') {
+      this.line++;
+      this.cols = 0;
+    } else {
+      this.cols++;
+    }
+    return ch;
   }
 
   readChAt(index) {
@@ -118,6 +125,33 @@ export default class StringSource {
   readStr(n, from) {
     if (typeof from === 'undefined') from = this.startIndex;
     return this.buffer.substring(from, from + n);
+  }
+
+  /**
+   * Scan buffer[this.startIndex, end) for '\n' and advance line/cols to match,
+   * mirroring readCh()'s per-char logic. Does NOT touch startIndex — callers
+   * set that themselves afterwards (their "end" is not always startIndex + n;
+   * readUptoCloseTag's consumed span includes the matched stop string).
+   *
+   * Shared by updateBufferBoundary() and the readUpto*() family so every path
+   * that advances the cursor in bulk keeps line/col accurate, not just the
+   * single-character readCh() path.
+   *
+   * @param {number} end — exclusive end of the span being skipped
+   */
+  _advanceLineCol(end) {
+    let lastNewlineIdx = -1;
+    for (let i = this.startIndex; i < end; i++) {
+      if (this.buffer[i] === '\n') {
+        this.line++;
+        lastNewlineIdx = i;
+      }
+    }
+    if (lastNewlineIdx >= 0) {
+      this.cols = end - lastNewlineIdx - 1;
+    } else {
+      this.cols += end - this.startIndex;
+    }
   }
 
   readUpto(stopStr) {
@@ -131,6 +165,7 @@ export default class StringSource {
       }
       if (match) {
         const result = this.buffer.substring(this.startIndex, i);
+        this._advanceLineCol(i + stopLength);
         this.startIndex = i + stopLength;
         return result;
       }
@@ -153,6 +188,7 @@ export default class StringSource {
       throw new ParseError(`Unexpected end of source reading '${stopChar}'`, ErrorCode.UNEXPECTED_END);
     }
     const result = this.buffer.substring(this.startIndex, i);
+    this._advanceLineCol(i + 1);
     this.startIndex = i + 1;
     return result;
   }
@@ -184,6 +220,7 @@ export default class StringSource {
       }
       if (state === 2) {
         const result = this.buffer.substring(this.startIndex, tagMatchStart);
+        this._advanceLineCol(i + 1);
         this.startIndex = i + 1;
         return result;
       }
@@ -211,7 +248,9 @@ export default class StringSource {
    * @param {number} [n=1]
    */
   updateBufferBoundary(n = 1) {
-    this.startIndex += n;
+    const end = this.startIndex + n;
+    this._advanceLineCol(end);
+    this.startIndex = end;
     const anyMarkActive = this._marks[0] >= 0 || this._marks[1] >= 0;
     if (this.autoFlush && this.startIndex >= this.flushThreshold && !anyMarkActive) {
       this.flush();

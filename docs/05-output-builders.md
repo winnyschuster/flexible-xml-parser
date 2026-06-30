@@ -35,38 +35,13 @@ const builder = new CompactBuilderFactory({
 new XMLParser({ OutputBuilder: builder });
 ```
 
-### `alwaysArray`
 
-Force specific tag paths to always be arrays, even if there's only one occurrence — prevents code from breaking when XML structure changes from single to multiple elements.
+### New Options
+- `alwaysArray`: Force specific tag paths to always be arrays
+- `forceArray`: Function-based array forcing for more complex conditions:
+>If either `alwaysArray` or `forceArray` returns true for a tag, it becomes an array.
 
-```javascript
-alwaysArray: ['..item', new Expression('catalog.book')]
-```
-
-### `forceArray`
-
-Function-based array forcing for more complex conditions:
-
-```javascript
-forceArray: (matcher, isLeafNode) => {
-  return matcher.path().endsWith('catalog.book');
-}
-```
-
-If either `alwaysArray` or `forceArray` returns true for a tag, it becomes an array.
-
-### `forceTextNode`
-
-When `true`, text-only tags always produce `{ '#text': value }` instead of a plain string value — useful for uniform property access:
-
-```javascript
-// forceTextNode: false (default)
-parser.parse('<item>Value</item>');
-// { item: 'Value' }
-
-// forceTextNode: true
-// { item: { '#text': 'Value' } }
-```
+- `forceTextNode`: text-only tags always produce `{ '#text': value }`
 
 ---
 
@@ -186,6 +161,55 @@ class LowerCaseTagBuilder extends CompactBuilder {
 ```
 
 > Always spread `tag` (`{ ...tag, name }`) rather than mutating `tag.name` directly.
+
+### Position Meta data
+
+Parser sends position meta data to the builder since v1.4.1.
+
+`line`, `col`, and `index` always refer to the position of the relevant token's
+starting character (e.g. the `<` of an opening tag, the `</` of a closing tag) in the
+original source document:
+
+| Field | Meaning |
+|---|---|
+| `line` | 1-based line number. Always starts at `1`; increments after every `\n`. |
+| `col` | 0-based column on the current line — number of characters consumed since the last `\n` (or document start). Resets to `0` on every newline. |
+| `index` | 0-based absolute character/byte offset from the start of the document. Line-independent. |
+
+These are accurate everywhere in the document, including across CDATA sections,
+comments, and DOCTYPE internal subsets containing embedded newlines, and across
+chunk boundaries when using `feed()`/`end()` (a token that fails mid-read and gets
+replayed on the next chunk does not double-count newlines it had already consumed).
+
+#### addElement
+1st argument of `addElement` i.e. `tagDetail` has the following properties:
+- `name`: tag name
+- `index`, `line`, `col`: position of this tag's opening `<`
+- `openEnd`: absolute offset immediately after this opening tag's `>` (or `/>` for self-closing)
+
+#### closeElement
+`closeElement` receives `closeMeta` as its 2nd argument:
+- `name`: the tag being closed (always provided)
+- `index`, `line`, `col`: position of `</` for a real closing tag
+- `closeEnd`: absolute offset immediately after this closing tag's `>`
+
+For **unpaired/self-closing tags** (no real closing token), `closeMeta` reuses the
+opening tag's own position. For **stop nodes**, only `{ name, closeEnd }` is provided.
+For **autoClose/exitIf synthetic closes**, only `{ name }` is provided.
+
+### addAttribute
+`addAttribute` receives `attrMeta` as its 4th argument:
+- `index`: the attribute's absolute offset (where its name starts)
+
+`attrMeta` is `undefined` (not an object with `undefined` fields) when no position was
+available. `line`/`col` are deliberately not included on attributes — computing them
+would mean re-scanning every tag's attribute string for newlines, for a field most
+builders never read.
+
+### onStopNode
+`onStopNode` receives `stopEnd` as its 4th argument — position right after the stop
+node's matched closing tag:
+- `index`, `line`, `col`
 
 ### Common patterns
 

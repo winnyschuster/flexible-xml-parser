@@ -69,9 +69,15 @@ export default class FeedableSource {
      * _marks[1] — inner mark: set by individual reader functions.
      *             Used only by flush() as the safe trim boundary.
      *
-     * -1 means "not set" for that level.
+     * `null` means "not set" for that level.
+     *
+     * Each entry is { startIndex, line, cols } (or null when unset) — line/cols
+     * are captured alongside startIndex so a rewind can undo readCh()'s
+     * line/col advancement too, not just the buffer offset. Without this,
+     * any token that fails mid-read (UNEXPECTED_END) and gets replayed on
+     * the next feed() double-counts every '\n' it consumed before failing.
      */
-    this._marks = [-1, -1];
+    this._marks = [null, null];
   }
 
   /**
@@ -132,7 +138,7 @@ export default class FeedableSource {
    * @param {0|1} [level=0]
    */
   markTokenStart(level = 0) {
-    this._marks[level] = this.startIndex;
+    this._marks[level] = { startIndex: this.startIndex, line: this.line, cols: this.cols };
   }
 
   /**
@@ -145,11 +151,13 @@ export default class FeedableSource {
    * Called by XMLParser.feed() when a reader throws UNEXPECTED_END.
    */
   rewindToMark() {
-    if (this._marks[0] >= 0) {
-      this.startIndex = this._marks[0];
+    if (this._marks[0] !== null) {
+      this.startIndex = this._marks[0].startIndex;
+      this.line = this._marks[0].line;
+      this.cols = this._marks[0].cols;
     }
-    this._marks[0] = -1;
-    this._marks[1] = -1;
+    this._marks[0] = null;
+    this._marks[1] = null;
   }
 
   /**
@@ -165,8 +173,8 @@ export default class FeedableSource {
    * stale mark only delays flushing — it does not cause correctness issues.
    */
   clearMark() {
-    this._marks[0] = -1;
-    this._marks[1] = -1;
+    this._marks[0] = null;
+    this._marks[1] = null;
   }
 
   /**
@@ -212,6 +220,33 @@ export default class FeedableSource {
    * @returns {string} content before the stop string (stop string is consumed)
    * @throws {ParseError} UNEXPECTED_END when stop string is not found
    */
+  /**
+   * Scan buffer[this.startIndex, end) for '\n' and advance line/cols to match,
+   * mirroring readCh()'s per-char logic. Does NOT touch startIndex — callers
+   * set that themselves afterwards (their "end" is not always startIndex + n;
+   * readUptoCloseTag's consumed span includes the matched stop string).
+   *
+   * Shared by updateBufferBoundary() and the readUpto*() family so every path
+   * that advances the cursor in bulk keeps line/col accurate, not just the
+   * single-character readCh() path.
+   *
+   * @param {number} end — exclusive end of the span being skipped
+   */
+  _advanceLineCol(end) {
+    let lastNewlineIdx = -1;
+    for (let i = this.startIndex; i < end; i++) {
+      if (this.buffer[i] === '\n') {
+        this.line++;
+        lastNewlineIdx = i;
+      }
+    }
+    if (lastNewlineIdx >= 0) {
+      this.cols = end - lastNewlineIdx - 1;
+    } else {
+      this.cols += end - this.startIndex;
+    }
+  }
+
   readUpto(stopStr) {
     const inputLength = this.buffer.length;
     const stopLength = stopStr.length;
@@ -223,6 +258,7 @@ export default class FeedableSource {
       }
       if (match) {
         const result = this.buffer.substring(this.startIndex, i);
+        this._advanceLineCol(i + stopLength);
         this.startIndex = i + stopLength;
         return result;
       }
@@ -245,6 +281,7 @@ export default class FeedableSource {
       throw new ParseError(`Unexpected end of source reading '${stopChar}'`, ErrorCode.UNEXPECTED_END);
     }
     const result = this.buffer.substring(this.startIndex, i);
+    this._advanceLineCol(i + 1);
     this.startIndex = i + 1;
     return result;
   }
@@ -281,6 +318,7 @@ export default class FeedableSource {
       }
       if (state === 2) {
         const result = this.buffer.substring(this.startIndex, tagMatchStart);
+        this._advanceLineCol(i + 1);
         this.startIndex = i + 1;
         return result;
       }
@@ -300,8 +338,10 @@ export default class FeedableSource {
    * @param {number} [n=1]
    */
   updateBufferBoundary(n = 1) {
-    this.startIndex += n;
-    const anyMarkActive = this._marks[0] >= 0 || this._marks[1] >= 0;
+    const end = this.startIndex + n;
+    this._advanceLineCol(end);
+    this.startIndex = end;
+    const anyMarkActive = this._marks[0] !== null || this._marks[1] !== null;
     if (this.autoFlush && this.startIndex >= this.flushThreshold && !anyMarkActive) {
       this.flush();
     }
@@ -322,16 +362,17 @@ export default class FeedableSource {
     // Determine the earliest position that must be kept.
     let origin = this.startIndex;
     for (const m of this._marks) {
-      if (m >= 0 && m < origin) origin = m;
+      if (m !== null && m.startIndex < origin) origin = m.startIndex;
     }
 
     if (origin > 0) {
       this.buffer = this.buffer.substring(origin);
 
-      // Adjust all mark positions by the amount trimmed.
+      // Adjust all mark buffer-offsets by the amount trimmed.
+      // line/cols are not buffer-relative — they stay untouched.
       const marksLen = this._marks.length;
       for (let i = 0; i < marksLen; i++) {
-        if (this._marks[i] >= 0) this._marks[i] -= origin;
+        if (this._marks[i] !== null) this._marks[i].startIndex -= origin;
       }
 
       this.startIndex -= origin;

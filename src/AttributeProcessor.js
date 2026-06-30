@@ -132,8 +132,15 @@ export function collectRawAttributes(attrStr, parser, tagExp) {
  *
  * @param {string} attrStr - raw attribute expression substring
  * @param {object} parser  - Xml2JsParser instance
+ * @param {number} [attrsExpStart] - absolute document offset where `attrStr`
+ *   begins (tagExp._attrsExpStart from buildTagExpObj). When provided, each
+ *   attribute's absolute document index is computed and passed to
+ *   addAttribute() as a 4th argument: { index }. Line/col are intentionally
+ *   NOT computed here — doing so would require re-scanning attrStr for
+ *   newlines on every call, for a field most builders won't use; callers
+ *   that need it can derive line/col from `index` plus the document text.
  */
-export function flushAttributes(attrStr, parser) {
+export function flushAttributes(attrStr, parser, attrsExpStart) {
   if (!attrStr || attrStr.length === 0) return;
   const matches = parseAttributes(attrStr);
   const len = matches.length;
@@ -155,6 +162,10 @@ export function flushAttributes(attrStr, parser) {
     const rawVal = matches[i][4];
     const attrVal = rawVal !== undefined ? rawVal : true;
 
-    parser.outputBuilder.addAttribute(attrName, attrVal, parser.readonlyMatcher);
+    const attrMeta = attrsExpStart !== undefined
+      ? { index: attrsExpStart + matches[i].startIndex }
+      : undefined;
+
+    parser.outputBuilder.addAttribute(attrName, attrVal, parser.readonlyMatcher, attrMeta);
   }
 }
