@@ -132,7 +132,7 @@ export function readPiExp(parser) {
 
   const exp = parser.source.readStr(i);
   parser.source.updateBufferBoundary(i + 2);
-  return buildTagExpObj(exp, parser, expStart);
+  return buildTagExpObj(exp, parser, expStart, true);
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ export function readPiExp(parser) {
  *   position metadata is simply unavailable in that case, not an error.
  * @returns {{ tagName, selfClosing, rawAttributes, _attrsExp, _attrsExpStart }}
  */
-function buildTagExpObj(exp, parser, expStart) {
+function buildTagExpObj(exp, parser, expStart, forceToReadAttrs = false) {
   const tagExp = {
     tagName: "",
     selfClosing: false,
@@ -183,13 +183,13 @@ function buildTagExpObj(exp, parser, expStart) {
   tagExp.tagName = tagExp.tagName.trimEnd();
   tagExp._attrsExp = attrsExp;
 
-  if (!isQName(tagExp.tagName, parser.xmlVersion)) {
+  if (!isQName(tagExp.tagName, parser.xmlDec.version)) {
     throw new ParseError("Invalid tag name", ErrorCode.INVALID_TAG_NAME);
   }
 
   // Pass 1: collect raw attribute values for matcher.updateCurrent().
   // Pass 2 (flushAttributes) runs later in readOpeningTag, after updateCurrent().
-  if (!parser.options.skip.attributes && attrsExp.length > 0) {
+  if (forceToReadAttrs || !parser.options.skip.attributes && attrsExp.length > 0) {
     collectRawAttributes(attrsExp, parser, tagExp);
   }
   // console.log(tagExp)

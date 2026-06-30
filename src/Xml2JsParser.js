@@ -66,7 +66,12 @@ export default class Xml2JsParser {
     this.tagsStack = [];
     this._stopNodeProcessor = null;
     this._exitIfTriggered = false;
-    this.xmlVersion = '1.0';
+    this.xmlDec = {
+      version: 1.0,
+      lang: null,
+      encoding: null,
+      standalone: "yes"
+    }
 
     if (!this.matcher) {
       this.matcher = new Matcher();
@@ -541,7 +546,7 @@ export default class Xml2JsParser {
   processAttrName(attrName) {
     const options = this.options;
     attrName = resolveNsPrefix(attrName, options.skip.nsPrefix);
-    if (!isQName(attrName, this.xmlVersion)) { //TODO: make it optional
+    if (!isQName(attrName, this.xmlDec.version)) { //TODO: make it optional
       throw new ParseError(`Invalid attribute name: ${attrName}`, ErrorCode.INVALID_ATTRIBUTE_NAME);
     }
     attrName = sanitizeName(attrName, options.onDangerousProperty);

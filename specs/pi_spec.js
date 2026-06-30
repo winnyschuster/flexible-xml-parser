@@ -1,5 +1,5 @@
 import XMLParser from "../src/XMLParser.js";
-import { CompactBuilderFactory } from "@nodable/compact-builder";
+import { CompactBuilderFactory, CompactBuilder } from "@nodable/compact-builder";
 import {
   runAcrossAllInputSources,
   frunAcrossAllInputSources,
@@ -49,6 +49,30 @@ describe("Processing Instructions — XML declaration", function () {
     const result = parser.parse(`<?xml version="1.0"?><root/>`);
     expect(result["?xml"]).toBeUndefined();
     expect(result.root).toBe("");
+  });
+
+  it("should pass xml def attributes to builder even if attributes and declaration are skipped ", function () {
+
+    const factory = {
+      getInstance(parserOpts, readonlyMatcher) {
+        const base = new CompactBuilderFactory();
+        return new (class extends CompactBuilder {
+          addDeclaration(name, xmlDef) {
+            expect(xmlDef.version).toBe(1.1);
+          }
+        })(parserOpts, base.builderOptions, readonlyMatcher, base.registry);
+      }
+    };
+
+    const xmlData = `<?xml version="1.1"?><root/>`;
+
+    const parser = new XMLParser({
+      skip: { declaration: true, attributes: true },
+      OutputBuilder: factory
+    });
+
+    const result = parser.parse(xmlData);
+
   });
 
 });

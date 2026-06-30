@@ -46,9 +46,7 @@ export function readPiTag(parser) {
     // Read version from the declaration and store it on the parser for validators.
     const version = tagExp.rawAttributes?.version;
     if (version === '1.1') {
-      parser.xmlVersion = 1.1;
-    } else {
-      parser.xmlVersion = 1.0; // default
+      parser.xmlDec.version = 1.1;
     }
   }
 
@@ -62,10 +60,10 @@ export function readPiTag(parser) {
 
   if (tagExp.tagName === "xml") {
     //TODO: verify it is very first tag else error
-    if (!skipOptions.declaration) {
-      parser.outputBuilder.addDeclaration("?xml");
+    if (!skipOptions.declaration) { //TODO: unnecessary. builder can ommit it from response if not needed
+      parser.outputBuilder.addDeclaration("?xml", parser.xmlDec);
     }
-  } else if (!skipOptions.pi) {
+  } else if (!skipOptions.pi) { //TODO: unnecessary. builder can ommit it from response if not needed
     parser.outputBuilder.addInstruction("?" + tagExp.tagName);
   }
 }

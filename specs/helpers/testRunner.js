@@ -69,7 +69,7 @@ export function frunAcrossAllInputSources(testName, xmlString, testFn, parserOpt
       const inputSource = createInputSource(xmlString, inputType);
       const parser = new XMLParser(parserOptions);
       const result = inputSource.parse(parser);
-      testFn(result, inputSource.type);
+      testFn(result, inputSource.type, parser);
     });
   });
 }
