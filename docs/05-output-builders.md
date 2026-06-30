@@ -164,7 +164,7 @@ class LowerCaseTagBuilder extends CompactBuilder {
 
 ### Position Meta data
 
-Parser sends position meta data to the builder since v1.4.1.
+Parser sends position meta data to the builder since v1.5.0.
 
 `line`, `col`, and `index` always refer to the position of the relevant token's
 starting character (e.g. the `<` of an opening tag, the `</` of a closing tag) in the

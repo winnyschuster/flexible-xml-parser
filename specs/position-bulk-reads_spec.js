@@ -5,7 +5,7 @@
  * bypass readCh() entirely: readUpto/readUptoChar/readUptoCloseTag, as used
  * by CDATA, comments, and DOCTYPE internal-subset parsing.
  *
- * These paths were NOT covered by the v1.4.1 updateBufferBoundary() fix
+ * These paths were NOT covered by the v1.5.0 updateBufferBoundary() fix
  * (which only covers text runs via Xml2JsParser's explicit
  * updateBufferBoundary(runLen) call) — readUpto* mutated startIndex directly
  * without ever touching line/cols. Fixed by routing them through a shared

@@ -1,5 +1,5 @@
 /**
- * position-metadata_spec.js — FXP v1.4.1
+ * position-metadata_spec.js — FXP v1.5.0
  *
  * Tests for the new position-metadata contract (CLAUDE.md §14):
  *   - TagDetail.index/line/col now points at '<' (not past '>')
@@ -430,7 +430,7 @@ describe("Position metadata — backward compatibility", function () {
   );
 
   runAcrossAllInputSourcesWithFactory(
-    "default CompactBuilder output is identical before and after v1.4.1",
+    "default CompactBuilder output is identical before and after v1.5.0",
     `<root><item id="1">value</item></root>`,
     (result) => {
       expect(result.root.item["@_id"]).toBe(1);

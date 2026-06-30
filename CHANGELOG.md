@@ -1,4 +1,11 @@
 
+**1.5.0 (2026-06-30)**
+- TagDetail.index/line/col now points at '<' (not past '>')
+- TagDetail.openEnd — offset right after the opening tag's '>'
+- closeElement(matcher, closeMeta) — new 2nd arg
+- addAttribute(name, value, matcher, attrMeta) — new 4th arg
+- onStopNode(tagDetail, raw, matcher, stopEnd) — new 4th arg
+
 **1.4.0 (2026-06-16)**
 - keep `xml:space` to support spaces in parsed values.
   impact: 'trim' is replaced with 'ws' in pipeline. It means, whitespaces in tags values would be normalized.
