@@ -164,13 +164,18 @@ export default class Xml2JsParser {
           { line: this.source.line, col: this.source.cols, index: this.source.startIndex }
         );
 
-        if (nextChar === '!' || nextChar === '?') {
+        //sorted frequency wise
+        if (nextChar === '/') {
+          this.source.updateBufferBoundary();
+          this.readClosingTag(tagStart);
+        } else if (nextChar === '!') {
           this.source.updateBufferBoundary();
           this.addTextNode();
           this.readSpecialTag(nextChar);
-        } else if (nextChar === '/') {
+        } else if (nextChar === '?') {
           this.source.updateBufferBoundary();
-          this.readClosingTag(tagStart);
+          this.addTextNode();
+          readPiTag(this);
         } else {
           this.readOpeningTag(tagStart);
         }
@@ -534,8 +539,6 @@ export default class Xml2JsParser {
           this.outputBuilder.addInputEntities(docTypeEntities);
         }
       }
-    } else if (startCh === "?") {
-      readPiTag(this);
     } else {
       throw new ParseError(`Invalid tag '<${startCh}'`, ErrorCode.INVALID_TAG, { line: this.source.line, col: this.source.cols, index: this.source.startIndex });
     }
