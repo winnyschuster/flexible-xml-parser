@@ -249,20 +249,9 @@ export default class BufferSource {
   }
 
   readFromBuffer(n, shouldUpdate) {
-    let ch;
-    if (n === 1) {
-      ch = this.buffer[this.startIndex];
-      if (ch === 10) { // '\n'
-        this.line++;
-        this.cols = 1;
-      } else {
-        this.cols++;
-      }
-      ch = String.fromCharCode(ch);
-    } else {
-      this.cols += n;
-      ch = this.buffer.slice(this.startIndex, this.startIndex + n).toString();
-    }
+    const ch = n === 1
+      ? String.fromCharCode(this.buffer[this.startIndex])
+      : this.buffer.slice(this.startIndex, this.startIndex + n).toString();
     if (shouldUpdate) this.updateBufferBoundary(n);
     return ch;
   }
