@@ -115,6 +115,31 @@ export default class BufferSource {
   }
 
   /**
+   * See StringSource.scanTagExpEnd() for full rationale. Byte-indexed —
+   * quote/`>` are single-byte ASCII, safe for multi-byte UTF-8 content too
+   * (a `>` byte never appears as a UTF-8 continuation byte). Buffer isn't a
+   * rope, so no equivalent of FeedableSource's charCodeAt/flatten concern.
+   */
+  scanTagExpEnd() {
+    const buf = this.buffer;
+    const len = buf.length;
+    const start = this.startIndex;
+    let inSingle = false;
+    let inDouble = false;
+    for (let i = start; i < len; i++) {
+      const c = buf[i];
+      if (c === 39) { // '
+        if (!inDouble) inSingle = !inSingle;
+      } else if (c === 34) { // "
+        if (!inSingle) inDouble = !inDouble;
+      } else if (c === 62 && !inSingle && !inDouble) { // >
+        return i - start;
+      }
+    }
+    return -1;
+  }
+
+  /**
    * Scan buffer[this.startIndex, end) for byte code 10 ('\n') and advance
    * line/cols to match, mirroring readCh()'s per-byte logic. Does NOT touch
    * startIndex — callers set that themselves afterwards (their "end" is not

@@ -215,6 +215,43 @@ export default class FeedableSource {
   }
 
   /**
+   * Quote-aware scan, from the current read position, for the unquoted '>'
+   * that ends a tag expression. Used by readTagExp() — replaces the old
+   * per-char canRead(i)/readChAt(i) loop, which profiling showed as the
+   * single largest hotspot (~23-26% of parse time).
+   *
+   * IMPORTANT: bracket char access (`buf[i]`), not `charCodeAt(i)`. This
+   * source's buffer is built via repeated `+=` in feed() (a growing V8
+   * ConsString/rope). charCodeAt forces a full rope-flatten on access —
+   * confirmed via a crash (Runtime_StringCharCodeAt -> String::SlowFlatten)
+   * causing real O(n^2) memory growth when this was first written with
+   * charCodeAt. Bracket access matches what the pre-existing readChAt()
+   * already safely used.
+   *
+   * @returns {number} relative offset of the unquoted '>', or -1 if the
+   *   buffer runs out first — caller treats that as UNEXPECTED_END, the
+   *   normal retryable chunk-boundary signal for this source.
+   */
+  scanTagExpEnd() {
+    const buf = this.buffer;
+    const len = buf.length;
+    const start = this.startIndex;
+    let inSingle = false;
+    let inDouble = false;
+    for (let i = start; i < len; i++) {
+      const c = buf[i];
+      if (c === "'") {
+        if (!inDouble) inSingle = !inSingle;
+      } else if (c === '"') {
+        if (!inSingle) inDouble = !inDouble;
+      } else if (c === '>' && !inSingle && !inDouble) {
+        return i - start;
+      }
+    }
+    return -1;
+  }
+
+  /**
    * Read until stop string is found.
    * @param {string} stopStr
    * @returns {string} content before the stop string (stop string is consumed)

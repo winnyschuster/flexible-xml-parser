@@ -51,35 +51,24 @@ export function readTagExp(parser) {
   // begins — captured before any reads so buildTagExpObj can compute each
   // attribute's absolute document position from its offset within attrsExp.
   const expStart = parser.source.startIndex;
-  let inSingleQuotes = false;
-  let inDoubleQuotes = false;
-  let i;
-  let EOE = false;
 
-  for (i = 0; parser.source.canRead(i); i++) {
-    const char = parser.source.readChAt(i);
+  const relEnd = parser.source.scanTagExpEnd();
 
-    if (char === "'" && !inDoubleQuotes) {
-      inSingleQuotes = !inSingleQuotes;
-    } else if (char === '"' && !inSingleQuotes) {
-      inDoubleQuotes = !inDoubleQuotes;
-    } else if (char === '>' && !inSingleQuotes && !inDoubleQuotes) {
-      EOE = true;
-      break;
-    }
-  }
-
-  if (!EOE) {
-    // Buffer exhausted before '>' — chunk boundary mid-tag. Throw UNEXPECTED_END
-    // so feed()/parseStream() rewinds to the level-0 outer mark and retries.
+  if (relEnd === -1) {
+    // Buffer exhausted before an unquoted '>' was found — chunk boundary
+    // mid-tag. Throw UNEXPECTED_END so feed()/parseStream() rewinds to the
+    // level-0 outer mark and retries. (Note: scanTagExpEnd() only returns a
+    // non-negative index once both quote flags are already balanced-closed —
+    // by construction, not by a separate post-scan check — so there is no
+    // longer a distinct "unclosed quote but '>' was found" case to detect;
+    // the old UNCLOSED_QUOTE branch here was checking the same two flags
+    // immediately after the only code path that requires them both false,
+    // making it permanently unreachable.)
     throw new ParseError("Unexpected closing of source waiting for '>'", ErrorCode.UNEXPECTED_END);
-  } else if (inSingleQuotes || inDoubleQuotes) {
-    // '>' found but a quote was never closed — real syntax error.
-    throw new ParseError("Invalid attribute expression. Quote is not properly closed", ErrorCode.UNCLOSED_QUOTE);
   }
 
-  const exp = parser.source.readStr(i);
-  parser.source.updateBufferBoundary(i + 1);
+  const exp = parser.source.readStr(relEnd);
+  parser.source.updateBufferBoundary(relEnd + 1);
   return buildTagExpObj(exp, parser, expStart);
 }
 

@@ -128,6 +128,35 @@ export default class StringSource {
   }
 
   /**
+   * Quote-aware scan, from the current read position, for the unquoted '>'
+   * that ends a tag expression (`<tag attr="...">`). Used by readTagExp().
+   * Direct-buffer, bracket-indexed (not charCodeAt — see FeedableSource's
+   * copy of this method for why that matters there; kept identical here
+   * for consistency even though StringSource's buffer is never re-concatenated).
+   *
+   * @returns {number} relative offset (from startIndex) of the unquoted '>',
+   *   or -1 if the buffer is exhausted first (malformed input for StringSource).
+   */
+  scanTagExpEnd() {
+    const buf = this.buffer;
+    const len = buf.length;
+    const start = this.startIndex;
+    let inSingle = false;
+    let inDouble = false;
+    for (let i = start; i < len; i++) {
+      const c = buf[i];
+      if (c === "'") {
+        if (!inDouble) inSingle = !inSingle;
+      } else if (c === '"') {
+        if (!inSingle) inDouble = !inDouble;
+      } else if (c === '>' && !inSingle && !inDouble) {
+        return i - start;
+      }
+    }
+    return -1;
+  }
+
+  /**
    * Scan buffer[this.startIndex, end) for '\n' and advance line/cols to match,
    * mirroring readCh()'s per-char logic. Does NOT touch startIndex — callers
    * set that themselves afterwards (their "end" is not always startIndex + n;
