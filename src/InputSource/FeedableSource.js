@@ -421,8 +421,14 @@ export default class FeedableSource {
     const end = this.startIndex + n;
     this._advanceLineCol(end);
     this.startIndex = end;
-    const anyMarkActive = this._marks[0] !== null || this._marks[1] !== null;
-    if (this.autoFlush && this.startIndex >= this.flushThreshold && !anyMarkActive) {
+    // No "any mark active" gate here — flush()'s own min(startIndex, marks...)
+    // origin computation already guarantees any in-progress token (at either
+    // mark level) survives the trim. A separate boolean gate on top of that
+    // was redundant, and since _marks[0] is set on every parseXml() loop
+    // iteration and never nulled outside of rewindToMark() (an error path),
+    // that gate was effectively permanent — flush() never ran in normal
+    // operation. See specs/flushArchitecture_spec.js for the regression test.
+    if (this.autoFlush && this.startIndex >= this.flushThreshold) {
       this.flush();
     }
   }
@@ -433,7 +439,10 @@ export default class FeedableSource {
    *
    * The flush origin is the minimum of all active mark positions, so that any
    * in-progress token (at either mark level) is preserved in the buffer and
-   * can be re-read after the flush.
+   * can be re-read after the flush. This is the sole safety mechanism for
+   * flush() — callers do not need to additionally check "is a mark active"
+   * before calling this; an active mark simply caps how much origin can
+   * advance, rather than blocking the call outright.
    *
    * If no marks are active, the origin is startIndex itself — everything
    * before the current read position is discarded.

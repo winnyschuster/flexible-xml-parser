@@ -72,13 +72,17 @@ describe("Input Sources", function () {
 
 describe('FeedableSource autoFlush', function () {
 
-  it('never trims the buffer once parseXml()\'s level-0 mark pattern is in play', function () {
+  it('trims the buffer even with parseXml()\'s level-0 mark pattern in play (fixed)', function () {
     // Mirrors real usage: parseXml()'s main loop calls markTokenStart(0) once
     // per iteration and only clears it via rewindToMark() (the error/retry
     // path). On the success path the level-0 mark is simply overwritten by
     // the next markTokenStart(0), never nulled — so _marks[0] is non-null
-    // essentially forever. updateBufferBoundary()'s flush gate requires BOTH
-    // marks to be null, so flush() should never actually run in this pattern.
+    // essentially forever.
+    //
+    // FIXED: updateBufferBoundary() no longer gates flush() behind an
+    // "all marks null" check — flush()'s own min(startIndex, marks...) origin
+    // computation is sufficient protection on its own, and correctly trims up
+    // to (but not past) the still-live level-0 mark on every call.
     const source = new FeedableSource({ flushThreshold: 16, autoFlush: true });
 
     let fed = '';
@@ -94,13 +98,14 @@ describe('FeedableSource autoFlush', function () {
     }
 
     // We've advanced well past flushThreshold (16) many times over.
-    expect(source.startIndex).toBeGreaterThan(source.flushThreshold * 5);
+    expect(source.startIndex).toBeGreaterThan(0);
 
-    // BUG: buffer.length should have been trimmed by flush() at least once
-    // if autoFlush were actually doing its job. Instead the buffer still
-    // holds the entire fed document — flush() never ran.
-    expect(source.buffer.length).toBe(fed.length);
-    expect(source.buffer).toBe(fed);
+    // Buffer should have been trimmed repeatedly — it must not equal the
+    // full fed document, and remaining content is whatever's left after the
+    // last markTokenStart(0)/updateBufferBoundary() pair (mark tracks the
+    // most recent chunk start each iteration, so flush trims everything
+    // before it on each call).
+    expect(source.buffer.length).toBeLessThan(fed.length);
   });
 
   it('trims correctly if the level-0 mark is explicitly cleared (proves flush() itself is fine)', function () {
@@ -124,31 +129,32 @@ describe('FeedableSource autoFlush', function () {
     expect(source.buffer.length).toBeLessThan(fed.length);
   });
 
-  it('end-to-end via XMLParser.feed(): internal buffer grows to full document size on a real parse session', function () {
-    // Same bug, through the public API, so it can't be dismissed as an
-    // artifact of calling FeedableSource methods in an unrealistic order.
+  it('end-to-end via XMLParser.feed(): internal buffer stays bounded on a real parse session (fixed)', function () {
+    // Same scenario as before, through the public API, so it can't be
+    // dismissed as an artifact of calling FeedableSource methods in an
+    // unrealistic order.
     const parser = new XMLParser({ feedable: { flushThreshold: 64 } });
 
     const item = '<item><name>value</name></item>';
     const chunkSize = 8; // small chunks to force many feed()/parseXml() cycles
     let totalFed = 0;
+    let peakBuffer = 0;
 
     for (let n = 0; n < 200; n++) {
       for (let i = 0; i < item.length; i += chunkSize) {
         const chunk = item.slice(i, i + chunkSize);
         parser.feed(chunk);
         totalFed += chunk.length;
+        peakBuffer = Math.max(peakBuffer, parser._feedSource.buffer.length);
       }
     }
-    // Check the live buffer just before end() (which nulls _feedSource).
     const bufferLenBeforeEnd = parser._feedSource.buffer.length;
     parser.end();
 
-    // If autoFlush worked, the live buffer would stay small (bounded by
-    // flushThreshold plus a bit of slack), regardless of how much total data
-    // was fed across the whole session. Instead it grows unboundedly with
-    // totalFed, confirming flush() never fires in a real feed() session.
-    expect(bufferLenBeforeEnd).toBeGreaterThan(totalFed - 100);
+    // With autoFlush working, the live buffer should stay well below the
+    // total fed across the whole 200-repetition session, not track it 1:1.
+    expect(bufferLenBeforeEnd).toBeLessThan(totalFed / 2);
+    expect(peakBuffer).toBeLessThan(totalFed / 2);
   });
 
 });

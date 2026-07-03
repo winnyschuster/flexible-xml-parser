@@ -280,8 +280,12 @@ export default class StringSource {
     const end = this.startIndex + n;
     this._advanceLineCol(end);
     this.startIndex = end;
-    const anyMarkActive = this._marks[0] >= 0 || this._marks[1] >= 0;
-    if (this.autoFlush && this.startIndex >= this.flushThreshold && !anyMarkActive) {
+    // See FeedableSource.updateBufferBoundary() for why there is no "any mark
+    // active" gate here — flush()'s own min-origin computation already
+    // protects any in-progress token; a separate gate was redundant and, since
+    // marks are effectively always set in normal operation, made flush()
+    // permanently unreachable. See specs/flushArchitecture_spec.js.
+    if (this.autoFlush && this.startIndex >= this.flushThreshold) {
       this.flush();
     }
   }
