@@ -158,6 +158,29 @@ export const defaultOptions = {
   //onStopNode(tagDetail, rawContent, matcher)
   // --- output ---
   OutputBuilder: null, //TODO: accept lower case
+
+  // --- decoding ---
+  // Controls how raw bytes (Buffer/Uint8Array input to parse()/parseBytesArr(),
+  // or chunks fed to feed()/parseStream()) are turned into text.
+  //
+  //   encoding — 'auto' (default) sniffs BOM + a leading <?xml ... encoding="...">
+  //              declaration per XML 1.0 Appendix F, falling back to utf8 if
+  //              neither is present. Set explicitly (e.g. 'utf8', 'utf16le',
+  //              'latin1', 'ascii', or a custom-registered name) to skip
+  //              detection entirely.
+  //              NOTE: streaming inputs (feed()/parseStream()) do not yet
+  //              support 'auto' detection — see docs/16-encoding.md — and
+  //              fall back to utf8 the same way they always have.
+  //
+  //   customDecoders — { name: descriptor } map merged into the encoding
+  //                    registry before resolution, for encodings FXP doesn't
+  //                    ship natively (e.g. Shift_JIS via iconv-lite). See
+  //                    docs/16-encoding.md for the descriptor shape.
+  //
+  decoding: {
+    encoding: 'auto',
+    customDecoders: null,
+  },
 };
 
 // All names that should never appear as property keys

@@ -86,6 +86,11 @@ export const ErrorCode = Object.freeze({
   // Entity registration
   ENTITY_INVALID_KEY: 'ENTITY_INVALID_KEY',
   ENTITY_INVALID_VALUE: 'ENTITY_INVALID_VALUE',
+
+  // Encoding
+  UNSUPPORTED_ENCODING: 'UNSUPPORTED_ENCODING',
+  INVALID_DECODER: 'INVALID_DECODER',
+  ENCODING_MISMATCH: 'ENCODING_MISMATCH',
 });
 
 export default ParseError;

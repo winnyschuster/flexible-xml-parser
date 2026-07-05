@@ -3,6 +3,7 @@ import { ParseError, ErrorCode } from './ParseError.js';
 import Xml2JsParser from './Xml2JsParser.js';
 import FeedableSource from './InputSource/FeedableSource.js';
 import StreamSource from './InputSource/StreamSource.js';
+import EncodingRegistry, { defaultEncodingRegistry } from './Encoding/EncodingRegistry.js';
 
 export default class XMLParser {
 
@@ -17,6 +18,22 @@ export default class XMLParser {
     // ── Batching state ──────────────────────────────────
     this._pendingBytes = 0;
     this._batchThreshold = this.options.feedable?.bufferSize;
+
+    // Per-instance encoding registry only when custom decoders are supplied
+    // — avoids mutating the shared default registry (which would leak a
+    // customDecoder registered on one XMLParser instance into every other
+    // instance in the process). The common case (no customDecoders) reuses
+    // the shared default registry, seeded once at module load.
+    if (this.options.decoding?.customDecoders) {
+      const registry = new EncodingRegistry();
+      for (const [name, descriptor] of Object.entries(this.options.decoding.customDecoders)) {
+        registry.register({ name, ...descriptor });
+      }
+      this.options.decoding._registry = registry;
+    } else {
+      this.options.decoding = this.options.decoding || {};
+      this.options.decoding._registry = defaultEncodingRegistry;
+    }
   }
 
   // ─── One-shot parse methods ───────────────────────────────────────────────
@@ -27,7 +44,11 @@ export default class XMLParser {
    */
   parse(xmlData) {
     if (xmlData instanceof Buffer || ArrayBuffer.isView(xmlData)) {
-      xmlData = xmlData.toString();
+      // Route through the encoding-aware path (auto-detect / configured
+      // `decoding.encoding`) instead of an unconditional utf8 toString() —
+      // otherwise a non-utf8 `decoding.encoding` option would silently be
+      // ignored for Buffer input given directly to parse().
+      return this.parseBytesArr(xmlData);
     } else if (typeof xmlData !== 'string') {
       if (xmlData && typeof xmlData.toString === 'function') {
         xmlData = xmlData.toString();
@@ -80,7 +101,10 @@ export default class XMLParser {
       throw new ParseError('parseStream() requires a Node.js Readable stream.', ErrorCode.INVALID_STREAM);
     }
 
-    const source = new StreamSource(this.options.feedable);
+    const source = new StreamSource({
+      ...this.options.feedable,
+      decoding: { encoding: this.options.decoding.encoding, registry: this.options.decoding._registry },
+    });
     const streamParser = this._createParser();
     streamParser.source = source;
     streamParser.initializeParser();
@@ -116,6 +140,11 @@ export default class XMLParser {
         () => {
           if (settled) return;
           try {
+            // source.end() (called by attachStream just before this) can
+            // release content that was held back pending encoding detection
+            // (see FeedableSource's 'auto' mode) — run parseXml() once more
+            // to consume it before finalizing. No-op if there's nothing new.
+            streamParser.parseXml();
             streamParser.finalizeXml();
             this._lastParseErrors = streamParser.autoCloseHandler?.getErrors() ?? [];
             settled = true;
@@ -291,7 +320,10 @@ export default class XMLParser {
 
   /** @private */
   _initFeedSession() {
-    this._feedSource = new FeedableSource(this.options.feedable);
+    this._feedSource = new FeedableSource({
+      ...this.options.feedable,
+      decoding: { encoding: this.options.decoding.encoding, registry: this.options.decoding._registry },
+    });
     this._feedParser = this._createParser();
     this._feedParser.source = this._feedSource;
     this._feedParser.initializeParser();

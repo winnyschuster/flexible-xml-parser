@@ -1,5 +1,12 @@
 import { ParseError, ErrorCode } from '../ParseError.js';
 import { StringDecoder } from 'node:string_decoder';
+import { sniff } from '../Encoding/EncodingDetector.js';
+
+// Matches EncodingDetector's own declaration-peek window — bounds how much
+// raw (undecoded) data 'auto' mode ever holds before giving up and resolving
+// on whatever it has (a document with no BOM and no <?xml?> declaration is
+// legitimately using the utf8 default, not something to keep waiting on).
+const SNIFF_CAP = 200;
 
 /**
  * FeedableSource — input source for the feed()/end() API.
@@ -62,6 +69,29 @@ export default class FeedableSource {
     this.autoFlush = options.autoFlush !== false;            // true by default
     this.flushThreshold = options.flushThreshold || 1024;             // 1 KB
 
+    // Encoding resolution. Three modes:
+    //   - explicit name (options.decoding.encoding, e.g. 'utf16le'): resolve
+    //     a decoder immediately via the registry.
+    //   - 'auto': can't build a decoder yet — not enough bytes seen. Buffer
+    //     raw (undecoded) bytes in `_sniffBuffer` until either a BOM+enough
+    //     bytes, a complete `<?xml ... ?>` declaration, or SNIFF_CAP bytes
+    //     have accumulated, then resolve once via _resolveDetection() and
+    //     replay the held bytes through the real decoder. See feed() below.
+    //   - neither supplied (direct FeedableSource construction, bypassing
+    //     XMLParser): falls back to a caller-supplied `options.createDecoder`
+    //     if given, else plain utf8 — identical to this class's behavior
+    //     before this feature existed.
+    this._decodingOptions = options.decoding || null;
+    const requestedEncoding = this._decodingOptions?.encoding;
+    this._detecting = requestedEncoding === 'auto';
+    this._sniffBuffer = this._detecting ? Buffer.alloc(0) : null;
+    if (!this._detecting && requestedEncoding && this._decodingOptions.registry) {
+      const registry = this._decodingOptions.registry;
+      this._createDecoder = () => registry.resolve(requestedEncoding).createDecoder();
+    } else {
+      this._createDecoder = typeof options.createDecoder === 'function' ? options.createDecoder : null;
+    }
+
     /**
      * Two-level mark stack.
      *
@@ -110,20 +140,24 @@ export default class FeedableSource {
    *   than its byte length until the next chunk completes the sequence.
    */
   feed(data) {
-    let newData;
-    if (typeof data === 'string') {
-      newData = data;
-    } else if (Buffer.isBuffer(data)) {
-      // Stateful decode: bytes of a multi-byte char split across two feed()
-      // calls are buffered internally by StringDecoder and correctly
-      // stitched together, instead of each chunk being decoded in isolation.
-      if (!this._decoder) this._decoder = new StringDecoder('utf8');
-      newData = this._decoder.write(data);
-    } else if (data?.toString) {
-      newData = data.toString();
-    } else {
-      throw new ParseError('feed() data must be a string or Buffer.', ErrorCode.DATA_MUST_BE_STRING);
+    if (this._detecting) {
+      if (typeof data === 'string') {
+        // Already decoded upstream (e.g. stream.setEncoding() was called by
+        // the caller) — detection is moot, nothing left to sniff.
+        this._detecting = false;
+      } else {
+        const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        this._sniffBuffer = this._sniffBuffer.length ? Buffer.concat([this._sniffBuffer, chunk]) : chunk;
+        const declarationComplete = this._sniffBuffer.includes(Buffer.from('?>'));
+        if (this._sniffBuffer.length < SNIFF_CAP && !declarationComplete) {
+          // Not enough to decide yet — hold everything, decode nothing.
+          return 0;
+        }
+        data = this._resolveDetection();
+      }
     }
+
+    let newData = this._decodeNow(data);
 
     const liveBytes = this.buffer.length - this.startIndex;
 
@@ -139,8 +173,48 @@ export default class FeedableSource {
     return newData.length;
   }
 
+  /** @private */
+  _decodeNow(data) {
+    if (typeof data === 'string') return data;
+    if (Buffer.isBuffer(data)) {
+      // Stateful decode: bytes of a multi-byte char split across two feed()
+      // calls are buffered internally by StringDecoder and correctly
+      // stitched together, instead of each chunk being decoded in isolation.
+      if (!this._decoder) this._decoder = this._createDecoder ? this._createDecoder() : new StringDecoder('utf8');
+      return this._decoder.write(data);
+    }
+    if (data?.toString) return data.toString();
+    throw new ParseError('feed() data must be a string or Buffer.', ErrorCode.DATA_MUST_BE_STRING);
+  }
+
+  /**
+   * Resolve 'auto' encoding from `_sniffBuffer` (BOM + `<?xml encoding="...">`
+   * sniffing, XML 1.0 Appendix F — see Encoding/EncodingDetector.js), build
+   * the real decoder, strip any BOM, and return the held bytes ready to be
+   * decoded normally by the caller in feed(). Runs exactly once per session.
+   * @private
+   * @returns {Buffer}
+   */
+  _resolveDetection() {
+    const registry = this._decodingOptions.registry;
+    const { encoding, bomLength } = sniff(this._sniffBuffer, registry);
+    const descriptor = registry.resolve(encoding);
+    this._createDecoder = () => descriptor.createDecoder();
+    this._detecting = false;
+    const held = bomLength ? this._sniffBuffer.subarray(bomLength) : this._sniffBuffer;
+    this._sniffBuffer = null;
+    return held;
+  }
+
   /** Signal that no more data will be fed. */
   end() {
+    if (this._detecting) {
+      // Whole document arrived without ever reaching SNIFF_CAP or a
+      // complete declaration (a short, unadorned document like <root/>) —
+      // resolve now, on whatever bytes we have.
+      const held = this._resolveDetection();
+      this.buffer += this._decodeNow(held);
+    }
     if (this._decoder) {
       // Flush any final incomplete byte sequence held by the decoder. For
       // well-formed UTF-8 input this is normally '' (nothing pending); a

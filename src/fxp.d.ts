@@ -266,6 +266,11 @@ export declare const ErrorCode: {
   // Entity registration
   readonly ENTITY_INVALID_KEY: 'ENTITY_INVALID_KEY';
   readonly ENTITY_INVALID_VALUE: 'ENTITY_INVALID_VALUE';
+
+  // Encoding
+  readonly UNSUPPORTED_ENCODING: 'UNSUPPORTED_ENCODING';
+  readonly INVALID_DECODER: 'INVALID_DECODER';
+  readonly ENCODING_MISMATCH: 'ENCODING_MISMATCH';
 };
 
 export type ErrorCodeValue = typeof ErrorCode[keyof typeof ErrorCode];
@@ -400,6 +405,54 @@ export interface FeedableOptions {
   flushThreshold?: number;
 }
 
+/**
+ * Shape a custom decoder must satisfy — matches Node's own StringDecoder.
+ */
+export interface EncodingDecoder {
+  write(chunk: Buffer): string;
+  end(): string;
+}
+
+/**
+ * Descriptor for a custom encoding, registered via `decoding.customDecoders`.
+ */
+export interface EncodingDescriptor {
+  /** Factory returning a fresh stateful decoder for one parse session. */
+  createDecoder: () => EncodingDecoder;
+  /**
+   * Set to true only if an ASCII delimiter byte (<,>,",') can never occur as
+   * part of one of this encoding's multi-byte sequences. Getting this wrong
+   * causes BufferSource to misread tag/attribute boundaries. Default: false
+   * (safe, slightly slower decode-first path).
+   */
+  selfSynchronizing?: boolean;
+  /** Bytes-per-character varies (affects error line/col accuracy only). Default: true */
+  variableWidth?: boolean;
+  /** Byte-order-mark signature for auto-detection, if this encoding has one. */
+  bomBytes?: Buffer;
+  aliases?: string[];
+}
+
+/**
+ * Controls how raw bytes (Buffer/Uint8Array input to parse()/parseBytesArr(),
+ * or chunks fed to feed()/parseStream()) are turned into text.
+ */
+export interface DecodingOptions {
+  /**
+   * 'auto' (default) sniffs a byte-order-mark and/or a leading
+   * `<?xml ... encoding="..."?>` declaration (XML 1.0 Appendix F), falling
+   * back to 'utf8' if neither is present. Set explicitly to skip detection.
+   * Built-in values: 'auto' | 'utf8' | 'ascii' | 'latin1' | 'utf16le' | 'utf16be'
+   * — or any name registered via `customDecoders`.
+   */
+  encoding?: 'auto' | 'utf8' | 'ascii' | 'latin1' | 'utf16le' | 'utf16be' | string;
+  /**
+   * Encodings FXP doesn't ship natively (e.g. Shift_JIS via iconv-lite),
+   * keyed by the name used in `encoding`. Scoped to this XMLParser instance.
+   */
+  customDecoders?: Record<string, EncodingDescriptor>;
+}
+
 export interface X2jOptions {
   // --- node-type controls ---
   /** Fine-grained control over which node types appear in output */
@@ -458,6 +511,9 @@ export interface X2jOptions {
    * memory constraints.
    */
   feedable?: FeedableOptions;
+
+  // --- decoding (encoding of raw byte/stream input) ---
+  decoding?: DecodingOptions;
 
   // --- output builder ---
   /** Pluggable output builder instance. Default: CompactObjBuilder */

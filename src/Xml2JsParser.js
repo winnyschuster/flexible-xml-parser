@@ -1,5 +1,7 @@
 import StringSource from './InputSource/StringSource.js';
 import BufferSource from './InputSource/BufferSource.js';
+import { buildProfileForBuffer } from './Encoding/EncodingProfile.js';
+import { errorPositionOf } from './util.js';
 import { readTagExp, readClosingTagName, flushAttributes } from './XmlPartReader.js';
 import { StopNodeProcessor } from './StopNodeProcessor.js';
 import { readComment, readCdata, readPiTag } from './XmlSpecialTagsReader.js';
@@ -117,7 +119,9 @@ export default class Xml2JsParser {
   }
 
   parseBytesArr(data) {
-    this.source = new BufferSource(data);
+    const registry = this.options.decoding?._registry;
+    const profile = buildProfileForBuffer(data, this.options.decoding, registry);
+    this.source = new BufferSource(data, {}, profile);
     this.initializeParser();
     this._parseAndFinalize();
     return this.outputBuilder.getOutput();
@@ -149,7 +153,7 @@ export default class Xml2JsParser {
       // TagDetail (open tags) and closeMeta (close tags), instead of deriving
       // it after the fact from source.startIndex once the tag name/attrs have
       // already been consumed (which points past the tag, not at its start).
-      const preReadPos = { line: this.source.line, col: this.source.cols, index: this.source.startIndex };
+      const preReadPos = errorPositionOf(this.source);
 
       const ch = this.source.readCh();
       if (ch === undefined || ch === '') break;
@@ -161,7 +165,7 @@ export default class Xml2JsParser {
         if (nextChar === '') throw new ParseError(
           "Unexpected end of source after '<'",
           ErrorCode.UNEXPECTED_END,
-          { line: this.source.line, col: this.source.cols, index: this.source.startIndex }
+          errorPositionOf(this.source)
         );
 
         //sorted frequency wise
@@ -270,7 +274,7 @@ export default class Xml2JsParser {
     };
 
     if (this.isUnpaired(tagName) || this.isStopNode()) {
-      throw new ParseError(`Unexpected closing tag '${tagName}'`, ErrorCode.UNEXPECTED_CLOSE_TAG, { line: this.source.line, col: this.source.cols, index: this.source.startIndex });
+      throw new ParseError(`Unexpected closing tag '${tagName}'`, ErrorCode.UNEXPECTED_CLOSE_TAG, errorPositionOf(this.source));
     }
 
     if (tagName !== this.currentTagDetail.name) {
@@ -278,7 +282,7 @@ export default class Xml2JsParser {
         throw new ParseError(
           `Unexpected closing tag '${tagName}' expecting '${this.currentTagDetail.name}'`,
           ErrorCode.MISMATCHED_CLOSE_TAG,
-          { line: this.source.line, col: this.source.cols, index: this.source.startIndex }
+          errorPositionOf(this.source)
         );
       }
 
@@ -523,7 +527,7 @@ export default class Xml2JsParser {
   readSpecialTag(startCh) {
     if (startCh === "!") {
       let nextChar = this.source.readCh();
-      if (nextChar === null || nextChar === undefined) throw new ParseError("Unexpected end of source after '<!'", ErrorCode.UNEXPECTED_END, { line: this.source.line, col: this.source.cols, index: this.source.startIndex });
+      if (nextChar === null || nextChar === undefined) throw new ParseError("Unexpected end of source after '<!'", ErrorCode.UNEXPECTED_END, errorPositionOf(this.source));
 
       if (nextChar === "-") {
         readComment(this);
@@ -540,7 +544,7 @@ export default class Xml2JsParser {
         }
       }
     } else {
-      throw new ParseError(`Invalid tag '<${startCh}'`, ErrorCode.INVALID_TAG, { line: this.source.line, col: this.source.cols, index: this.source.startIndex });
+      throw new ParseError(`Invalid tag '<${startCh}'`, ErrorCode.INVALID_TAG, errorPositionOf(this.source));
     }
   }
 
