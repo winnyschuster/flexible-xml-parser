@@ -1,3 +1,5 @@
+import { ParseError, ErrorCode } from './ParseError.js';
+
 export function getAllMatches(string, regex) {
   const matches = [];
   let match = regex.exec(string);
@@ -71,4 +73,54 @@ export function errorPositionOf(source) {
     return source.correctedPosition();
   }
   return { line: source.line, col: source.cols, index: source.startIndex };
+}
+
+/**
+ * Assert that the upcoming characters in the source match the expected string.
+ * If not enough data → throws UNEXPECTED_END.
+ * If mismatch → throws INVALID_TAG with the given errorMsg.
+ * On success, consumes the matched characters (advances startIndex).
+ *
+ * @param {object} source - input source (must have canRead, matchAhead, updateBufferBoundary)
+ * @param {string} expected - string to match
+ * @param {string} errorMsg - description of what is being read (used in error messages)
+ * @param {boolean} [caseInsensitive=false]
+ */
+export function expectMatch(source, expected, errorMsg, caseInsensitive = false) {
+  const len = expected.length;
+  if (!source.canRead(len)) {
+    throw new ParseError(
+      `Unexpected end of source reading ${errorMsg}`,
+      ErrorCode.UNEXPECTED_END,
+      errorPositionOf(source)
+    );
+  }
+  const matched = source.matchAhead(expected, caseInsensitive);
+  if (matched !== true) {
+    throw new ParseError(
+      `Invalid ${errorMsg}`,
+      ErrorCode.INVALID_TAG,
+      errorPositionOf(source)
+    );
+  }
+  source.updateBufferBoundary(len);
+}
+
+/**
+ * Assert that the source has at least `n` characters available from the current position.
+ * Throws UNEXPECTED_END if not enough data.
+ * Does NOT consume any characters.
+ *
+ * @param {object} source - input source (must have canRead)
+ * @param {number} n - number of characters needed
+ * @param {string} errorMsg - description of what is being read (used in error message)
+ */
+export function ensureCanRead(source, n, errorMsg) {
+  if (!source.canRead(n)) {
+    throw new ParseError(
+      `Unexpected end of source reading ${errorMsg}`,
+      ErrorCode.UNEXPECTED_END,
+      errorPositionOf(source)
+    );
+  }
 }

@@ -1,4 +1,5 @@
 import { readPiExp, flushAttributes } from './XmlPartReader.js';
+import { expectMatch, errorPositionOf } from './util.js';
 import { ParseError, ErrorCode } from './ParseError.js';
 
 export function readCdata(parser) {
@@ -8,24 +9,7 @@ export function readCdata(parser) {
   parser.source.markTokenStart(1);
 
   //<![ already consumed up to this point
-  if (!parser.source.canRead(5)) {
-    // Fewer than 6 chars available — chunk boundary inside "CDATA[" preamble.
-    // Throw UNEXPECTED_END so feed() rewinds to the level-0 outer mark and
-    // retries the full '<![CDATA[' on the next chunk.
-    throw new ParseError(
-      `Unexpected end of source reading CDATA preamble`,
-      ErrorCode.UNEXPECTED_END,
-      { line: parser.source.line, col: parser.source.cols, index: parser.source.startIndex }
-    );
-  }
-  let str = parser.source.readStr(6); // "CDATA["
-  parser.source.updateBufferBoundary(6);
-
-  if (str !== "CDATA[") throw new ParseError(
-    `Invalid CDATA expression at ${parser.source.line}:${parser.source.cols}`,
-    ErrorCode.INVALID_TAG,
-    { line: parser.source.line, col: parser.source.cols, index: parser.source.startIndex }
-  );
+  expectMatch(parser.source, "CDATA[", "CDATA preamble");
 
   let text = parser.source.readUpto("]]>");
   parser.outputBuilder.addLiteral(text);
@@ -84,20 +68,7 @@ export function readPiTag(parser) {
 export function readComment(parser) {
   parser.source.markTokenStart(1);
   //<!- already consumed
-  if (!parser.source.canRead()) {
-    throw new ParseError(
-      `Unexpected end of source reading comment`,
-      ErrorCode.UNEXPECTED_END,
-      { line: parser.source.line, col: parser.source.cols, index: parser.source.startIndex }
-    );
-  }
-  let ch = parser.source.readCh();
-  if (ch !== "-") throw new ParseError(
-    `Invalid comment expression at ${parser.source.line}:${parser.source.cols}`,
-    ErrorCode.INVALID_TAG,
-    { line: parser.source.line, col: parser.source.cols, index: parser.source.startIndex }
-  );
-
+  expectMatch(parser.source, "-", "comment second dash");
   let text = parser.source.readUpto("-->");
   parser.outputBuilder.addComment(text);
 }
