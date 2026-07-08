@@ -1,6 +1,5 @@
 import { ParseError, ErrorCode } from '../../ParseError.js';
-
-const Constants = { space: 32, tab: 9 };
+import { isSpaceCode } from '../../util.js';
 
 /**
  * ByteScanStrategy — for self-synchronizing encodings only (utf8/ascii/latin1
@@ -123,7 +122,7 @@ export function createByteScanStrategy(decodeCharAt, nodeEncoding = 'utf8', isCo
       for (let i = this.startIndex; i < inputLength; i++) {
         const b = this.buffer[i];
         if (state === 1) {
-          if (b === Constants.space || b === Constants.tab) continue;
+          if (isSpaceCode(b)) continue;
           if (b === GT) { state = 2; }
           else { state = 0; tagMatchStart = -1; }
         } else {

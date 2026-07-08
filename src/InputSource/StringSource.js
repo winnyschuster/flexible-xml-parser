@@ -1,4 +1,5 @@
 import { ParseError, ErrorCode } from '../ParseError.js';
+import { isSpace } from '../util.js';
 
 /**
  * StringSource — input source backed by an in-memory string.
@@ -231,7 +232,7 @@ export default class StringSource {
     for (let i = this.startIndex; i < inputLength; i++) {
       if (state === 1) {
         const c = this.buffer[i];
-        if (c === ' ' || c === '\t') continue;
+        if (isSpace(c)) continue;
         if (c === '>') { state = 2; }
         else { state = 0; tagMatchStart = -1; } // false match e.g. </scriptX>
       } else {

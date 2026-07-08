@@ -1,5 +1,5 @@
 import { ParseError, ErrorCode } from './ParseError.js';
-import { expectMatch, ensureCanRead, errorPositionOf } from './util.js';
+import { expectMatch, ensureCanRead, errorPositionOf, isSpace } from './util.js';
 
 export function readDocType(parser) {
     parser.source.markTokenStart(1);
@@ -30,11 +30,7 @@ export function readDocType(parser) {
             // (the '<') and re-throw UNEXPECTED_END so the outer rewind via
             // rewindToMark() lands at parseXml's level-0 mark (the DOCTYPE '<').
             try {
-                if (!parser.source.canRead()) {
-                    throw new ParseError(`Unexpected end of source reading DOCTYPE sub-tag`,
-                        ErrorCode.UNEXPECTED_END,
-                        errorPositionOf(parser.source));
-                }
+                ensureCanRead(parser.source, 0, "DOCTYPE sub-tag");
                 let bang = parser.source.readStr(1);
                 parser.source.updateBufferBoundary(1);
                 if (bang !== "!") throw new ParseError(
@@ -43,21 +39,13 @@ export function readDocType(parser) {
                     errorPositionOf(parser.source)
                 );
 
-                if (!parser.source.canRead()) {
-                    throw new ParseError(`Unexpected end of source reading DOCTYPE sub-tag type`,
-                        ErrorCode.UNEXPECTED_END,
-                        errorPositionOf(parser.source));
-                }
+                ensureCanRead(parser.source, 0, "DOCTYPE sub-tag type");
                 let typeChar = parser.source.readStr(1);
                 parser.source.updateBufferBoundary(1);
 
                 if (typeChar === "-") {
                     // <!-- comment -->
-                    if (!parser.source.canRead()) {
-                        throw new ParseError(`Unexpected end of source reading DOCTYPE comment`,
-                            ErrorCode.UNEXPECTED_END,
-                            errorPositionOf(parser.source));
-                    }
+                    ensureCanRead(parser.source, 0, "DOCTYPE comment");
                     let dash2 = parser.source.readStr(1);
                     parser.source.updateBufferBoundary(1);
                     if (dash2 !== "-") throw new ParseError(
@@ -69,11 +57,7 @@ export function readDocType(parser) {
 
                 } else if (typeChar === "E") {
                     // ENTITY or ELEMENT — one more char to distinguish
-                    if (!parser.source.canRead()) {
-                        throw new ParseError(`Unexpected end of source reading DOCTYPE E-type sub-tag`,
-                            ErrorCode.UNEXPECTED_END,
-                            errorPositionOf(parser.source));
-                    }
+                    ensureCanRead(parser.source, 0, "DOCTYPE E-type sub-tag");
                     let typeChar2 = parser.source.readStr(1);
                     parser.source.updateBufferBoundary(1);
 
@@ -191,7 +175,7 @@ function readEntityExp(parser) {
     let entityNameLen = 0;
     while (source.canRead()) {
         const ch = source.readCh();
-        if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '"' || ch === "'") break;
+        if (isSpace(ch) || ch === '"' || ch === "'") break;
         entityNameLen++;
     }
     const entityName = source.readStr(entityNameLen, entityNameStart);
@@ -202,11 +186,7 @@ function readEntityExp(parser) {
     validateEntityName(entityName, parser);
     skipSourceWhitespace(source);
 
-    if (!source.canRead()) {
-        throw new ParseError(`Unexpected end of source after entity name "${entityName}"`,
-            ErrorCode.UNEXPECTED_END,
-            errorPositionOf(source));
-    }
+    ensureCanRead(source, 0, `after entity name "${entityName}"`);
 
     // SYSTEM check requires 6 chars; only peek when they are available
     if (source.canRead(5)) {
@@ -224,11 +204,7 @@ function readEntityExp(parser) {
     }
 
     // Need at least the opening quote char
-    if (!source.canRead()) {
-        throw new ParseError(`Unexpected end of source reading entity value for "${entityName}"`,
-            ErrorCode.UNEXPECTED_END,
-            errorPositionOf(source));
-    }
+    ensureCanRead(source, 0, `entity value for "${entityName}"`);
 
     const [entityValue] = readIdentifierVal(source, "entity");
 
@@ -262,7 +238,7 @@ function readElementExp(parser) {
     let elementNameLen = 0;
     while (source.canRead()) {
         const ch = source.readCh();
-        if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') break;
+        if (isSpace(ch)) break;
         elementNameLen++;
     }
     const elementName = source.readStr(elementNameLen, elementNameStart);
@@ -328,7 +304,7 @@ function readNotationExp(parser) {
     let notationNameLen = 0;
     while (source.canRead()) {
         const ch = source.readCh();
-        if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') break;
+        if (isSpace(ch)) break;
         notationNameLen++;
     }
     const notationName = source.readStr(notationNameLen, notationNameStart);
@@ -394,9 +370,7 @@ function readIdentifierVal(source, type) {
 function skipSourceWhitespace(source) {
     while (source.canRead()) {
         const ch = source.readChAt(0);
-        //TODO: util.isSpaceCode
-        if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\r') break;
-        //source.readCh();
+        if (!isSpace(ch)) break;
         source.updateBufferBoundary(1)
     }
 }

@@ -1,4 +1,5 @@
 import { ParseError, ErrorCode } from '../../ParseError.js';
+import { isSpace } from '../../util.js';
 
 /**
  * CharScanStrategy — for encodings that are NOT self-synchronizing (UTF-16
@@ -95,7 +96,7 @@ export function createCharScanStrategy() {
       for (let i = this.startIndex; i < inputLength; i++) {
         if (state === 1) {
           const c = this.buffer[i];
-          if (c === ' ' || c === '\t') continue;
+          if (isSpace(c)) continue;
           if (c === '>') { state = 2; }
           else { state = 0; tagMatchStart = -1; }
         } else {

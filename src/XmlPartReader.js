@@ -30,9 +30,11 @@ export function tryMatchClosingTagName(source, expectedRawName) {
   if (source.matchAhead(expectedRawName) !== true) return -1;
   let i = expectedRawName.length;
   let c = source.readChAt(i);
-  while (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
+  if (c === '>') return i + 1;
+  while (isSpace(c)) {
     i++;
     c = source.readChAt(i);
+    if (c === '>') return i + 1;
   }
   if (c !== '>') return -1;
   return i + 1;
@@ -50,20 +52,24 @@ export function tryMatchClosingTagName(source, expectedRawName) {
  */
 export function readClosingTagName(source) {
   source.markTokenStart(1);
-  let i = 0;
+  // Closing tags never carry attributes, so unlike an opening tag's
+  // expression there is no quoting to worry about — the very first '>' is
+  // always the real end. That means the whole name can be found with one
+  // direct scan of whatever is already buffered (readUptoChar), instead of
+  // asking "is there more data yet?" before every single character.
   const start = source.startIndex;
-  while (source.canRead()) {
-    const ch = source.readCh();
-    if (ch === ">") {
-      const str = source.readStr(i, start);
-      if (str) return str.trimEnd();
-      else return "";
-    } else i++;
+  try {
+    const str = source.readUptoChar(">");
+    return str.trimEnd();
+  } catch (err) {
+    // Buffer ran out before '>' showed up — the retryable chunk-boundary
+    // case (readUptoChar didn't consume anything on failure). Re-throw with
+    // whatever was buffered so far in the message so autoClose's truncation
+    // recovery (which reads it back out of the message) can still report a
+    // useful partial tag name.
+    const partial = source.readStr(Number.MAX_SAFE_INTEGER, start);
+    throw new ParseError(`Unexpected end of source reading closing tag '</${partial}'`, ErrorCode.UNEXPECTED_END);
   }
-
-  const text = source.readStr(i, start);
-  source.updateBufferBoundary(i);
-  throw new ParseError(`Unexpected end of source reading closing tag '</${text}'`, ErrorCode.UNEXPECTED_END);
 }
 
 /**
@@ -146,9 +152,9 @@ export function readPiExp(parser) {
     throw new ParseError("Invalid attribute expression. Quote is not properly closed in PI tag expression", ErrorCode.UNCLOSED_QUOTE);
   }
 
-  if (!parser.options.skip.attributes) {
-    //TODO: use regex to verify attributes if not set to ignore
-  }
+  // if (!parser.options.skip.attributes) {
+  //   //TODO: use regex to verify attributes if not set to ignore
+  // }
 
   const exp = parser.source.readStr(i);
   parser.source.updateBufferBoundary(i + 2);
