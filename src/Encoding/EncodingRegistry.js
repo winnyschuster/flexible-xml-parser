@@ -1,5 +1,5 @@
-import { StringDecoder } from 'node:string_decoder';
 import { ParseError, ErrorCode } from '../ParseError.js';
+import { createTextDecoderAdapter, createUtf16BeAdapter } from './TextDecoderAdapter.js';
 
 /**
  * EncodingRegistry — owns the set of known EncodingDescriptors.
@@ -38,7 +38,7 @@ export default class EncodingRegistry {
       bomBytes: Buffer.from([0xef, 0xbb, 0xbf]),
       selfSynchronizing: true,
       variableWidth: true,
-      createDecoder: () => new StringDecoder('utf8'),
+      createDecoder: () => createTextDecoderAdapter('utf-8'),
     });
     this.register({
       name: 'ascii',
@@ -46,7 +46,11 @@ export default class EncodingRegistry {
       bomBytes: null,
       selfSynchronizing: true,
       variableWidth: false,
-      createDecoder: () => new StringDecoder('ascii'),
+      // TextDecoder has no dedicated 'ascii' label. windows-1252 is a strict
+      // superset of ASCII and decodes any valid ASCII byte identically —
+      // only bytes 0x80-0x9F (never legal ASCII) would differ, so behavior
+      // for real ASCII input is unchanged.
+      createDecoder: () => createTextDecoderAdapter('windows-1252'),
     });
     this.register({
       name: 'latin1',
@@ -54,7 +58,7 @@ export default class EncodingRegistry {
       bomBytes: null,
       selfSynchronizing: true,
       variableWidth: false,
-      createDecoder: () => new StringDecoder('latin1'),
+      createDecoder: () => createTextDecoderAdapter('iso-8859-1'),
     });
     this.register({
       name: 'utf16le',
@@ -62,16 +66,17 @@ export default class EncodingRegistry {
       bomBytes: Buffer.from([0xff, 0xfe]),
       selfSynchronizing: false,
       variableWidth: true,
-      createDecoder: () => new StringDecoder('utf16le'),
+      createDecoder: () => createTextDecoderAdapter('utf-16le'),
     });
     this.register({
       name: 'utf16be',
       aliases: ['utf-16be'],
-      // Node has no native utf16be decoder; byte-swap then decode as utf16le.
+      // No native TextDecoder label for utf16be either; byte-swap then
+      // decode as utf16le, same trick as before.
       bomBytes: Buffer.from([0xfe, 0xff]),
       selfSynchronizing: false,
       variableWidth: true,
-      createDecoder: () => makeUtf16BeDecoder(),
+      createDecoder: () => createUtf16BeAdapter(),
     });
   }
 
@@ -126,31 +131,6 @@ export default class EncodingRegistry {
     }
     return out.sort((a, b) => b.bomBytes.length - a.bomBytes.length);
   }
-}
-
-function makeUtf16BeDecoder() {
-  const inner = new StringDecoder('utf16le');
-  let pending = null; // holds a single odd leftover byte across writes
-  return {
-    write(buf) {
-      let work = pending ? Buffer.concat([pending, buf]) : buf;
-      pending = null;
-      if (work.length % 2 === 1) {
-        pending = work.subarray(work.length - 1);
-        work = work.subarray(0, work.length - 1);
-      }
-      const swapped = Buffer.from(work);
-      for (let i = 0; i + 1 < swapped.length; i += 2) {
-        const tmp = swapped[i];
-        swapped[i] = swapped[i + 1];
-        swapped[i + 1] = tmp;
-      }
-      return inner.write(swapped);
-    },
-    end() {
-      return inner.end();
-    },
-  };
 }
 
 export const defaultEncodingRegistry = new EncodingRegistry();

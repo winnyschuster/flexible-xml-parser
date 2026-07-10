@@ -1,7 +1,7 @@
 import { ParseError, ErrorCode } from '../ParseError.js';
 import { isSpace, QUOTE_PAIRS_CAPACITY } from '../util.js';
 import { scanTagExpEnd, scanTagExpEndFast } from './scanTagExpEnd.js';
-import { StringDecoder } from 'node:string_decoder';
+import { createTextDecoderAdapter } from '../Encoding/TextDecoderAdapter.js';
 import { sniff } from '../Encoding/EncodingDetector.js';
 
 // Matches EncodingDetector's own declaration-peek window — bounds how much
@@ -111,7 +111,7 @@ export default class FeedableSource {
      * chunks must go through this rather than Buffer#toString() per chunk —
      * toString() decodes each chunk in isolation, so a multi-byte UTF-8
      * character whose bytes straddle a chunk boundary gets corrupted (each
-     * half independently replaced with U+FFFD). StringDecoder holds back an
+     * half independently replaced with U+FFFD). The decoder holds back an
      * incomplete trailing sequence internally and prepends it to the next
      * write(), so a split character decodes correctly once the rest of its
      * bytes arrive. Only created if Buffer input is ever fed — string-only
@@ -182,9 +182,9 @@ export default class FeedableSource {
     if (typeof data === 'string') return data;
     if (Buffer.isBuffer(data)) {
       // Stateful decode: bytes of a multi-byte char split across two feed()
-      // calls are buffered internally by StringDecoder and correctly
-      // stitched together, instead of each chunk being decoded in isolation.
-      if (!this._decoder) this._decoder = this._createDecoder ? this._createDecoder() : new StringDecoder('utf8');
+      // calls are buffered internally by the decoder and correctly stitched
+      // together, instead of each chunk being decoded in isolation.
+      if (!this._decoder) this._decoder = this._createDecoder ? this._createDecoder() : createTextDecoderAdapter('utf-8');
       return this._decoder.write(data);
     }
     if (data?.toString) return data.toString();
@@ -223,7 +223,7 @@ export default class FeedableSource {
       // Flush any final incomplete byte sequence held by the decoder. For
       // well-formed UTF-8 input this is normally '' (nothing pending); a
       // non-empty result here means the input was genuinely truncated
-      // mid-character, and StringDecoder's own U+FFFD substitution is the
+      // mid-character, and the decoder's own U+FFFD substitution is the
       // correct, standard behavior for that case.
       const tail = this._decoder.end();
       if (tail) this.buffer += tail;

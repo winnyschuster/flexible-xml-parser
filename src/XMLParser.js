@@ -221,8 +221,8 @@ export default class XMLParser {
     }
 
     // Pass raw data straight through — do NOT pre-convert Buffers to string
-    // here. FeedableSource.feed() decodes Buffers via a persistent
-    // StringDecoder so a multi-byte UTF-8 character split across two feed()
+    // here. FeedableSource.feed() decodes Buffers via a persistent stateful
+    // decoder so a multi-byte UTF-8 character split across two feed()
     // calls decodes correctly; converting each chunk with .toString() first
     // (as this used to do) decodes each chunk in isolation and corrupts a
     // split character. feed() itself validates the type and throws
