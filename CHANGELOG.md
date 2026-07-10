@@ -1,7 +1,11 @@
+**1.9.0 (2026-07-10)**
+- perf: matchAhead for knowen string sequence
+- perf: remove row/col to improve speed (10%)
+- perf: speed up tag expression reading
+- perf: obj creation, skip expressin matching when options are not set
 
 **1.8.0 (2026-07-06)**
 - feat: Support multiple encodings
-- fix: reading bug for a rare case for String source
 - feat: make santization optional for output builders, who don't want to produce JSON.
 - perf: cache tag/attr name validation.
 

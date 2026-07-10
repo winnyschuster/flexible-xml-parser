@@ -287,7 +287,7 @@ type ErrorCodeValue = typeof ErrorCode[keyof typeof ErrorCode];
  *   parser.parse(xml);
  * } catch (e) {
  *   if (e instanceof ParseError) {
- *     console.error(e.code, e.line, e.col, e.message);
+ *     console.error(e.code, e.index, e.message);
  *   } else {
  *     throw e; // unexpected runtime error
  *   }
@@ -301,18 +301,6 @@ declare class ParseError extends Error {
   readonly code: ErrorCodeValue;
 
   /**
-   * 1-based line number where the error occurred.
-   * `undefined` when position information is not available for this error type.
-   */
-  readonly line: number | undefined;
-
-  /**
-   * 1-based column where the error occurred.
-   * `undefined` when position information is not available for this error type.
-   */
-  readonly col: number | undefined;
-
-  /**
    * 0-based character offset from the start of the document.
    * `undefined` when position information is not available for this error type.
    */
@@ -324,7 +312,7 @@ declare class ParseError extends Error {
     position?: { line?: number; col?: number; index?: number }
   );
 
-  /** Returns a formatted string: `ParseError [CODE] at line N, col M: message` */
+  /** Returns a formatted string: `ParseError [CODE] at index N: message` */
   toString(): string;
 }
 
@@ -439,7 +427,8 @@ interface EncodingDescriptor {
    * (safe, slightly slower decode-first path).
    */
   selfSynchronizing?: boolean;
-  /** Bytes-per-character varies (affects error line/col accuracy only). Default: true */
+  /** Bytes-per-character varies. Informational only — position reporting is
+   * index-only, so nothing currently branches on this. Default: true */
   variableWidth?: boolean;
   /** Byte-order-mark signature for auto-detection, if this encoding has one. */
   bomBytes?: Buffer;
@@ -550,7 +539,7 @@ interface X2jOptions {
    * The callback is informational — return value is ignored. To suppress the
    * node from output, use a custom OutputBuilder subclass instead.
    *
-   * @param tagDetail  - `{ name, line, col, index }` of the stop-node opening tag.
+   * @param tagDetail  - `{ name, index }` of the stop-node opening tag.
    * @param rawContent - Raw text content between the opening and closing tags.
    * @param matcher    - Read-only path matcher positioned at the stop node.
    *
@@ -564,7 +553,7 @@ interface X2jOptions {
    * });
    */
   onStopNode?: (
-    tagDetail: { name: string; line: number; col: number; index: number },
+    tagDetail: { name: string; index: number },
     rawContent: string,
     matcher: any,
   ) => void;
@@ -681,7 +670,7 @@ declare class XMLParser {
   /**
    * Return structural errors collected during the last parse call.
    * Only populated when `autoClose.collectErrors` is `true`.
-   * Each entry: `{ type, tag, expected, line, col, index }`
+   * Each entry: `{ type, tag, expected, index }`
    */
   getParseErrors(): Array<{
     type: 'unclosed-eof' | 'mismatched-close' | 'phantom-close' | 'partial-tag';
