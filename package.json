@@ -21,7 +21,8 @@
   },
   "scripts": {
     "test": "c8 --reporter=lcov --reporter=text jasmine specs/*spec.js",
-    "bundle": "webpack --config webpack.cjs.config.js"
+    "bundle": "webpack --config webpack.cjs.config.js",
+    "map": "codebase-map scan && codebase-map format --format dsl --include \"src/**\" > .codebase-map.dsl"
   },
   "keywords": [
     "xml",
