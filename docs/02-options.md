@@ -111,6 +111,7 @@ feedable: {
   maxBufferSize:  10 * 1024 * 1024,  // 10 MB; throw if exceeded
   autoFlush:      true,               // discard processed chars automatically
   flushThreshold: 1024,              // processed-char count that triggers flush
+  bufferSize:     256,               // pending-byte threshold before attempting a parse pass
 }
 ```
 

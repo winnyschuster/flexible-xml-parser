@@ -1,3 +1,9 @@
+**1.10.0 (2026-07-11)**
+- docs: Add `bufferSize` option
+- feat: replace string decoder with custom implementation
+- fix (#6): Buffer overflow when parsing XML with huge XML payload
+
+
 **1.9.0 (2026-07-10)**
 - perf: matchAhead for knowen string sequence
 - perf: remove row/col to improve speed (10%)

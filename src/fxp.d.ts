@@ -391,6 +391,12 @@ export interface FeedableOptions {
    * operations.  Default: 1024 (1 KB)
    */
   flushThreshold?: number;
+
+  /**
+   * Number of pending bytes that triggers an automatic parse pass attempt.
+   * Default: 256 (0.25 KB)
+   */
+  bufferSize?: number;
 }
 
 /**

@@ -56,13 +56,13 @@ export function readPiTag(parser) {
     flushAttributes(tagExp._parsedAttrs, parser, tagExp._attrsExpStart, tagExp._rawAttrMatchCount);
   }
 
-  if (tagExp.tagName === "xml") {
+  if (tagExp.tagName === "xml") {//TODO: move it to above if condition
     //TODO: verify it is very first tag else error
     if (!skipOptions.declaration) { //TODO: unnecessary. builder can ommit it from response if not needed
       parser.outputBuilder.addDeclaration("?xml", parser.xmlDec);
     }
   } else if (!skipOptions.pi) { //TODO: unnecessary. builder can ommit it from response if not needed
-    parser.outputBuilder.addInstruction("?" + tagExp.tagName);
+    parser.outputBuilder.addInstruction("?" + tagExp.tagName); // TODO: send without '?'
   }
 }
 
